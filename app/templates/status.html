@@ -19,7 +19,10 @@
 
         <div class="mb-4">
             <div class="flex justify-between text-sm text-gray-400 mb-1">
-                <span id="stage-label">{{ job.stage_name or 'Queued' }}</span>
+                <span class="flex items-center gap-2">
+                    <span id="stage-label">{{ job.stage_name or 'Queued' }}</span>
+                    <span id="elapsed-timer" class="text-xs text-gray-500 font-mono {% if job.status not in ('processing',) %}hidden{% endif %}"></span>
+                </span>
                 <span id="stage-counter">{% if job.status == 'completed' %}6/6{% else %}{{ job.current_stage }}/6{% endif %}</span>
             </div>
             <div class="w-full bg-gray-800 rounded-full h-3">

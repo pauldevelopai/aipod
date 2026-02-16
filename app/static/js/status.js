@@ -10,10 +10,45 @@ document.addEventListener("DOMContentLoaded", () => {
     const logStatus = document.getElementById("log-status");
     const logPanel = document.getElementById("log-panel");
 
+    const elapsedTimer = document.getElementById("elapsed-timer");
+
     let lastLogCount = 0;
     let lastUpdatedAt = null;
     let staleCheckCount = 0;
     const STALE_THRESHOLD = 450; // 450 polls * 2s = 15 min without update = stale
+
+    // Elapsed timer — ticks every second while processing
+    let timerInterval = null;
+    let stageStartTime = null;
+    let lastStage = null;
+
+    function formatElapsed(seconds) {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return m > 0 ? `${m}m ${s.toString().padStart(2, "0")}s` : `${s}s`;
+    }
+
+    function startTimer() {
+        if (timerInterval) return;
+        stageStartTime = Date.now();
+        elapsedTimer.classList.remove("hidden");
+        timerInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - stageStartTime) / 1000);
+            elapsedTimer.textContent = formatElapsed(elapsed);
+        }, 1000);
+    }
+
+    function resetTimer() {
+        stageStartTime = Date.now();
+    }
+
+    function stopTimer() {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+        elapsedTimer.classList.add("hidden");
+    }
 
     function renderLogEntries(entries) {
         if (!entries || entries.length === 0) return;
@@ -67,6 +102,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
     }
 
+    // Start timer immediately if page loads during processing
+    if (CURRENT_STATUS === "processing") {
+        startTimer();
+    }
+
     const evtSource = new EventSource(`/jobs/${JOB_ID}/events`);
 
     evtSource.addEventListener("status", (event) => {
@@ -77,9 +117,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Detect stale job (processing but no DB update)
         if (data.status === "processing") {
+            // Start or reset timer on stage change
+            if (data.current_stage !== lastStage) {
+                lastStage = data.current_stage;
+                resetTimer();
+                startTimer();
+            } else if (!timerInterval) {
+                startTimer();
+            }
+
             if (data.updated_at === lastUpdatedAt) {
                 staleCheckCount++;
                 if (staleCheckCount >= STALE_THRESHOLD) {
+                    stopTimer();
                     markStale();
                     evtSource.close();
                     return;
@@ -89,6 +139,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 lastUpdatedAt = data.updated_at;
             }
             logStatus.textContent = `Listening for updates...`;
+        } else {
+            stopTimer();
         }
 
         // Update stage info

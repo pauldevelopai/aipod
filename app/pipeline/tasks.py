@@ -92,7 +92,7 @@ def run_pipeline(self, job_id: str, start_from: int = 1):
                 _log_stage(job_id, "Stage 2 skipped — vocals/background already separated")
             else:
                 _update_job(job_id, current_stage=2, stage_name="Source Separation")
-                _log_stage(job_id, "Stage 2: Separating vocals from music/SFX (BS-RoFormer model, CPU)...")
+                _log_stage(job_id, "Stage 2: Separating vocals from music/SFX (MDX-NET ONNX, CPU)...")
                 stage_2_source_separation(job_id)
                 _log_stage(job_id, "Stage 2 complete — vocals and background tracks ready")
 
@@ -189,7 +189,7 @@ def stage_2_source_separation(job_id: str):
     cleaned_file = job["cleaned_file"]
     separation_dir = str(BASE_DIR / settings.output_dir / job_id / "separation")
 
-    _log_stage(job_id, "Running BS-RoFormer source separation (this may take a few minutes)...")
+    _log_stage(job_id, "Running MDX-NET ONNX source separation (this may take a few minutes)...")
 
     # Heartbeat: touch the DB every 30s so the UI doesn't think the worker crashed
     stop_heartbeat = threading.Event()
