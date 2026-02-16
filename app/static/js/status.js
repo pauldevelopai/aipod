@@ -13,7 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let lastLogCount = 0;
     let lastUpdatedAt = null;
     let staleCheckCount = 0;
-    const STALE_THRESHOLD = 150; // 150 polls * 2s = 5 min without update = stale (separation can take 3+ min)
+    const STALE_THRESHOLD = 450; // 450 polls * 2s = 15 min without update = stale
 
     function renderLogEntries(entries) {
         if (!entries || entries.length === 0) return;
@@ -37,7 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
         statusBadge.className = "px-3 py-1 rounded-full text-sm font-medium bg-orange-900 text-orange-300";
         statusBadge.textContent = "Stale (Worker Crashed?)";
         progressBar.className = progressBar.className.replace(/bg-\w+-500/, "bg-orange-500");
-        logStatus.textContent = "No updates for 60s — worker may have crashed";
+        logStatus.textContent = "No updates for 15 min — worker may have crashed";
         logStatus.className = "text-xs text-orange-400";
         // Show retry button
         actionButtons.innerHTML = `

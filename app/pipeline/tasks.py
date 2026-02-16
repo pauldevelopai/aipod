@@ -182,6 +182,7 @@ def stage_1_audio_cleanup(job_id: str):
 
 def stage_2_source_separation(job_id: str):
     """Stage 2: Separate vocals from music/SFX using audio-separator."""
+    import threading
     from app.services.separation import separate
 
     job = _get_job(job_id)
@@ -189,7 +190,22 @@ def stage_2_source_separation(job_id: str):
     separation_dir = str(BASE_DIR / settings.output_dir / job_id / "separation")
 
     _log_stage(job_id, "Running BS-RoFormer source separation (this may take a few minutes)...")
-    result = separate(cleaned_file, separation_dir)
+
+    # Heartbeat: touch the DB every 30s so the UI doesn't think the worker crashed
+    stop_heartbeat = threading.Event()
+    def heartbeat():
+        mins = 0
+        while not stop_heartbeat.wait(30):
+            mins += 0.5
+            _log_stage(job_id, f"Source separation still running ({mins:.0f}m elapsed)...")
+    hb_thread = threading.Thread(target=heartbeat, daemon=True)
+    hb_thread.start()
+
+    try:
+        result = separate(cleaned_file, separation_dir)
+    finally:
+        stop_heartbeat.set()
+        hb_thread.join(timeout=2)
 
     _update_job(
         job_id,

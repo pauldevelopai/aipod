@@ -30,11 +30,12 @@ def _get_separator(output_dir: str):
         _separator.torch_device_mps = None
         logger.info("Forced CPU mode to avoid MPS fork crash")
 
-        # Load the best vocal separation model (BS-RoFormer, SDR 12.9)
+        # ONNX MDX-NET model: fast on CPU (SDR 10.4 vocals), loads in ~7s
+        # vs BS-RoFormer (SDR 11.8 vocals) which needs 15+ min on 2GB instances
         _separator.load_model(
-            model_filename="model_bs_roformer_ep_317_sdr_12.9755.ckpt"
+            model_filename="UVR-MDX-NET_Main_406.onnx"
         )
-        logger.info("audio-separator loaded with BS-RoFormer model")
+        logger.info("audio-separator loaded with UVR-MDX-NET_Main_406 (ONNX) model")
         return _separator
 
     except Exception as e:
