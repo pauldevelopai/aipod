@@ -1,0 +1,53 @@
+/* AiPod custom styles */
+
+/* Drop zone active state */
+.drop-active {
+    border-color: #3b82f6 !important;
+    background-color: rgba(59, 130, 246, 0.05);
+}
+
+/* Segment textarea styling */
+.segment-text {
+    outline: none;
+    font-family: inherit;
+    line-height: 1.5;
+}
+
+.segment-text:focus {
+    background-color: rgba(59, 130, 246, 0.05);
+    border-radius: 4px;
+}
+
+/* Progress bar animation */
+@keyframes progress-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.progress-active {
+    animation: progress-pulse 2s ease-in-out infinite;
+}
+
+/* Audio player dark theme override */
+audio {
+    filter: invert(1) hue-rotate(180deg);
+    border-radius: 8px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1f2937;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+}

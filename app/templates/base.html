@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AiPod{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+    <nav class="bg-gray-900 border-b border-gray-800">
+        <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+            <a href="/" class="text-xl font-bold text-white tracking-tight">
+                AiPod
+            </a>
+            <span class="text-sm text-gray-400">Podcast Translation Pipeline</span>
+        </div>
+    </nav>
+
+    <main class="max-w-5xl mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="max-w-5xl mx-auto px-4 py-6 text-center text-gray-600 text-sm border-t border-gray-800 mt-12">
+        AiPod &mdash; Automated Podcast Translation
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

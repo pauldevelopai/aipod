@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}AiPod - Edit Translation{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold">Review Translation</h1>
+        <span class="text-sm text-gray-400">Job: <code>{{ job.id[:8] }}...</code></span>
+    </div>
+
+    <!-- Audio Player -->
+    {% if job.cleaned_file or job.original_file %}
+    <div class="bg-gray-900 rounded-lg border border-gray-800 p-4 mb-6">
+        <label class="text-sm text-gray-400 block mb-2">Original Audio</label>
+        <audio id="audio-player" controls class="w-full"
+            src="/jobs/{{ job.id }}/download/file" preload="metadata">
+        </audio>
+    </div>
+    {% endif %}
+
+    <form id="editor-form" action="/jobs/{{ job.id }}/edit" method="post">
+        <input type="hidden" name="edited_segments" id="edited-segments-input">
+
+        <!-- Side-by-side Editor -->
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <div>
+                <h2 class="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Original Transcript</h2>
+            </div>
+            <div>
+                <h2 class="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Translation (editable)</h2>
+            </div>
+        </div>
+
+        <div id="segments-container" class="space-y-3">
+            {% for i in range(translated | length) %}
+            <div class="grid grid-cols-2 gap-4 segment-row" data-index="{{ i }}">
+                <!-- Original -->
+                <div class="bg-gray-900 rounded-lg border border-gray-800 p-3">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-xs font-medium text-blue-400">{{ transcript[i].speaker if i < transcript|length else 'Speaker' }}</span>
+                        <span class="text-xs text-gray-600">
+                            {{ "%.1f" | format(transcript[i].start_time if i < transcript|length else 0) }}s
+                        </span>
+                        {% if transcript[i].detected_language is defined and transcript[i].detected_language.code != 'unknown' %}
+                        <span class="text-xs px-1.5 py-0.5 rounded bg-indigo-900/50 text-indigo-400">{{ transcript[i].detected_language.name }}</span>
+                        {% endif %}
+                    </div>
+                    <p class="text-sm text-gray-300">{{ transcript[i].text if i < transcript|length else '' }}</p>
+                </div>
+                <!-- Translation -->
+                <div class="bg-gray-900 rounded-lg border border-gray-700 p-3">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-xs font-medium text-green-400">{{ translated[i].speaker }}</span>
+                        <button type="button" class="text-xs text-gray-500 hover:text-yellow-400 tag-btn" title="Add emotion tag">+ tag</button>
+                    </div>
+                    <textarea
+                        class="w-full bg-transparent text-sm text-gray-100 resize-none border-0 focus:ring-0 p-0 segment-text"
+                        rows="3"
+                        data-speaker="{{ translated[i].speaker }}"
+                        data-start="{{ translated[i].start_time }}"
+                        data-end="{{ translated[i].end_time }}"
+                    >{{ translated[i].translated_text }}</textarea>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Submit -->
+        <div class="flex gap-3 mt-8">
+            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-8 rounded-lg transition-colors">
+                Approve & Continue Pipeline
+            </button>
+            <a href="/jobs/{{ job.id }}" class="bg-gray-700 hover:bg-gray-600 text-white font-medium py-3 px-8 rounded-lg transition-colors">
+                Back to Status
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/editor.js"></script>
+{% endblock %}

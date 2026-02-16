@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}AiPod - Job Status{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <h1 class="text-2xl font-bold mb-6">Job Status</h1>
+
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-6 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <span class="text-sm text-gray-400">Job ID: <code class="text-gray-300">{{ job.id }}</code></span>
+            <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium
+                {% if job.status == 'completed' %}bg-green-900 text-green-300
+                {% elif job.status == 'failed' %}bg-red-900 text-red-300
+                {% elif job.status == 'awaiting_review' %}bg-yellow-900 text-yellow-300
+                {% else %}bg-blue-900 text-blue-300{% endif %}">
+                {{ job.status | replace('_', ' ') | title }}
+            </span>
+        </div>
+
+        <div class="mb-4">
+            <div class="flex justify-between text-sm text-gray-400 mb-1">
+                <span id="stage-label">{{ job.stage_name or 'Queued' }}</span>
+                <span id="stage-counter">{{ job.current_stage }}/6</span>
+            </div>
+            <div class="w-full bg-gray-800 rounded-full h-3">
+                <div id="progress-bar" class="h-3 rounded-full transition-all duration-500
+                    {% if job.status == 'completed' %}bg-green-500
+                    {% elif job.status == 'failed' %}bg-red-500
+                    {% elif job.status == 'awaiting_review' %}bg-yellow-500
+                    {% else %}bg-blue-500{% endif %}"
+                    style="width: {{ (job.current_stage / 6 * 100) | int }}%">
+                </div>
+            </div>
+        </div>
+
+        <!-- Detected Languages -->
+        <div id="detected-langs" class="{% if not detected_languages %}hidden{% endif %} mb-4 mt-4">
+            <span class="text-xs text-gray-500 uppercase tracking-wider">Detected Languages</span>
+            <div id="lang-badges" class="flex flex-wrap gap-2 mt-1">
+                {% for lang in detected_languages %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-indigo-900 text-indigo-300">
+                    {{ lang.name }}
+                    <span class="text-indigo-500">{{ lang.percentage }}%</span>
+                </span>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Stage List -->
+        <div class="space-y-2 mt-6">
+            {% for num, name in stage_names.items() %}
+            {% if num > 0 %}
+            <div class="flex items-center gap-3 stage-item" data-stage="{{ num }}">
+                <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
+                    {% if job.current_stage > num %}bg-green-600 text-white
+                    {% elif job.current_stage == num and job.status == 'processing' %}bg-blue-600 text-white animate-pulse
+                    {% elif job.current_stage == num and job.status == 'awaiting_review' %}bg-yellow-600 text-white
+                    {% else %}bg-gray-700 text-gray-500{% endif %}">
+                    {% if job.current_stage > num %}&#10003;{% else %}{{ num }}{% endif %}
+                </div>
+                <span class="text-sm {% if job.current_stage == num %}text-white font-medium{% elif job.current_stage > num %}text-gray-400{% else %}text-gray-600{% endif %}">
+                    {{ name }}
+                </span>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Error Message -->
+    {% if job.error_message %}
+    <div id="error-box" class="bg-red-900/30 border border-red-800 rounded-lg p-4 mb-6">
+        <p class="text-red-300 text-sm">{{ job.error_message }}</p>
+    </div>
+    {% else %}
+    <div id="error-box" class="bg-red-900/30 border border-red-800 rounded-lg p-4 mb-6 hidden">
+        <p class="text-red-300 text-sm" id="error-text"></p>
+    </div>
+    {% endif %}
+
+    <!-- Action Buttons -->
+    <div id="action-buttons" class="flex gap-3">
+        {% if job.status == 'awaiting_review' %}
+        <a href="/jobs/{{ job.id }}/edit" class="bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-6 rounded-lg transition-colors">
+            Review & Edit Translation
+        </a>
+        {% elif job.status == 'completed' %}
+        <a href="/jobs/{{ job.id }}/download" class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-6 rounded-lg transition-colors">
+            Download Result
+        </a>
+        {% elif job.status == 'failed' or job.status == 'pending' %}
+        <form action="/jobs/{{ job.id }}/retry" method="post" class="inline">
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors">
+                Retry
+            </button>
+        </form>
+        {% endif %}
+        <a href="/" class="bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-6 rounded-lg transition-colors">
+            New Job
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const JOB_ID = "{{ job.id }}";
+    const CURRENT_STATUS = "{{ job.status }}";
+</script>
+<script src="/static/js/status.js"></script>
+{% endblock %}
