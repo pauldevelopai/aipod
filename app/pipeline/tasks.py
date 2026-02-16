@@ -1,6 +1,9 @@
 import asyncio
 import json
 import logging
+import threading
+import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +15,28 @@ from app.database import SessionLocal
 from app.models import Job
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _heartbeat(job_id: str, label: str, interval: int = 30):
+    """Context manager that logs periodic heartbeats while a long-running stage executes.
+    Shows accurate elapsed time so the UI knows the worker hasn't crashed."""
+    stop = threading.Event()
+    start_time = time.monotonic()
+
+    def _beat():
+        while not stop.wait(interval):
+            elapsed = int(time.monotonic() - start_time)
+            m, s = divmod(elapsed, 60)
+            _log_stage(job_id, f"{label} still running ({m}m {s:02d}s elapsed)...")
+
+    t = threading.Thread(target=_beat, daemon=True)
+    t.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        t.join(timeout=2)
 
 
 def _run_async(coro):
@@ -204,30 +229,16 @@ def stage_1_audio_cleanup(job_id: str):
 
 def stage_2_source_separation(job_id: str):
     """Stage 2: Separate vocals from music/SFX using audio-separator."""
-    import threading
     from app.services.separation import separate
 
     job = _get_job(job_id)
     cleaned_file = job.get("cleaned_file") or job["original_file"]
     separation_dir = str(BASE_DIR / settings.output_dir / job_id / "separation")
 
-    _log_stage(job_id, "Running MDX-NET ONNX source separation (this may take a few minutes)...")
+    _log_stage(job_id, "Running MDX-NET ONNX source separation...")
 
-    # Heartbeat: touch the DB every 30s so the UI doesn't think the worker crashed
-    stop_heartbeat = threading.Event()
-    def heartbeat():
-        mins = 0
-        while not stop_heartbeat.wait(30):
-            mins += 0.5
-            _log_stage(job_id, f"Source separation still running ({mins:.0f}m elapsed)...")
-    hb_thread = threading.Thread(target=heartbeat, daemon=True)
-    hb_thread.start()
-
-    try:
+    with _heartbeat(job_id, "Source separation"):
         result = separate(cleaned_file, separation_dir)
-    finally:
-        stop_heartbeat.set()
-        hb_thread.join(timeout=2)
 
     _update_job(
         job_id,
@@ -248,7 +259,8 @@ def stage_3_transcription(job_id: str):
     audio_file = job.get("vocals_file") or job.get("cleaned_file") or job["original_file"]
 
     _log_stage(job_id, "Running pyannote speaker diarization...")
-    diarization_segments = diarize(audio_file)
+    with _heartbeat(job_id, "Diarization"):
+        diarization_segments = diarize(audio_file)
     if diarization_segments:
         speakers = set(s.get("speaker") for s in diarization_segments)
         _log_stage(job_id, f"Diarization found {len(speakers)} speakers, {len(diarization_segments)} segments")
@@ -256,7 +268,8 @@ def stage_3_transcription(job_id: str):
         _log_stage(job_id, "pyannote unavailable, will use gap-based speaker detection")
 
     _log_stage(job_id, "Running Whisper transcription...")
-    segments = transcribe(audio_file, diarization_segments=diarization_segments)
+    with _heartbeat(job_id, "Whisper transcription"):
+        segments = transcribe(audio_file, diarization_segments=diarization_segments)
 
     _update_job(job_id, transcript_json=json.dumps(segments))
     method = "pyannote" if diarization_segments else "gap-based"
@@ -373,13 +386,14 @@ def stage_6_speech_generation(job_id: str):
         _run_async(elevenlabs.text_to_speech(text, voice_id, out_path))
         segment_files.append(out_path)
 
-        if len(segment_files) % 10 == 0:
+        if len(segment_files) % 5 == 0:
             _log_stage(job_id, f"TTS progress: {len(segment_files)}/{total_segments} segments done")
 
     _log_stage(job_id, f"All {len(segment_files)} TTS segments generated, stitching audio...")
 
     tts_path = str(BASE_DIR / settings.output_dir / job_id / "tts_stitched.mp3")
-    audio_service.stitch_segments(segment_files, tts_path)
+    with _heartbeat(job_id, "Stitching"):
+        audio_service.stitch_segments(segment_files, tts_path)
 
     transcript_segments = json.loads(job.get("transcript_json") or "[]")
     background_file = job.get("background_file")
@@ -387,11 +401,12 @@ def stage_6_speech_generation(job_id: str):
 
     if background_file and Path(background_file).exists():
         _log_stage(job_id, "Smart mixing TTS with background audio (preserving intro/outro)...")
-        audio_service.smart_mix(
-            tts_path, background_file, final_path,
-            transcript_segments=transcript_segments,
-            bg_volume_db=-12.0,
-        )
+        with _heartbeat(job_id, "Smart mixing"):
+            audio_service.smart_mix(
+                tts_path, background_file, final_path,
+                transcript_segments=transcript_segments,
+                bg_volume_db=-12.0,
+            )
         _log_stage(job_id, "Smart mix complete — background music preserved with intro/outro")
     else:
         _log_stage(job_id, "No background track available — using TTS-only output")
