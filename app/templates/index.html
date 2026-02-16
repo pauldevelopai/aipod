@@ -29,8 +29,12 @@
             <select name="target_language" id="target_language" required
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                 <option value="">Select target language...</option>
-                {% for lang in languages %}
-                <option value="{{ lang.code }}">{{ lang.name }}</option>
+                {% for group_name, group_langs in language_groups %}
+                <optgroup label="{{ group_name }}">
+                    {% for lang in group_langs %}
+                    <option value="{{ lang.code }}">{{ lang.name }}</option>
+                    {% endfor %}
+                </optgroup>
                 {% endfor %}
             </select>
             <p class="text-gray-600 text-xs mt-1">Source language(s) will be detected automatically from the audio</p>
@@ -43,6 +47,65 @@
             Start Translation Pipeline
         </button>
     </form>
+
+    {% if past_jobs %}
+    <!-- Past Jobs -->
+    <div class="mt-12">
+        <h2 class="text-xl font-bold mb-4">Past Jobs</h2>
+        <div class="space-y-3">
+            {% for job in past_jobs %}
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <span class="px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap
+                            {% if job.status == 'completed' %}bg-green-900 text-green-300
+                            {% elif job.status == 'failed' %}bg-red-900 text-red-300
+                            {% elif job.status == 'processing' %}bg-blue-900 text-blue-300
+                            {% elif job.status == 'awaiting_review' %}bg-yellow-900 text-yellow-300
+                            {% else %}bg-gray-700 text-gray-300{% endif %}">
+                            {{ job.status | replace('_', ' ') | title }}
+                        </span>
+                        <span class="text-sm text-gray-200 truncate" title="{{ job.original_filename }}">{{ job.original_filename or 'Unknown file' }}</span>
+                    </div>
+                    <time class="text-xs text-gray-500 whitespace-nowrap ml-3 local-time" datetime="{{ job.created_at if job.created_at else '' }}">{{ job.created_at[:16] | replace('T', ' ') if job.created_at else '' }}</time>
+                </div>
+                <div class="flex items-center justify-between">
+                    <div class="text-xs text-gray-500">
+                        <span>Target: <span class="text-gray-400">{{ job.target_lang_name }}</span></span>
+                        <span class="mx-2">|</span>
+                        <span>Stage: <span class="text-gray-400">{{ job.stage_name or 'Queued' }}</span></span>
+                    </div>
+                    <div class="flex gap-2">
+                        {% if job.status == 'completed' %}
+                        <a href="/jobs/{{ job.id }}/download/file" class="text-xs bg-green-800 hover:bg-green-700 text-green-200 px-2 py-1 rounded transition-colors">
+                            Download
+                        </a>
+                        <a href="/jobs/{{ job.id }}/download" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-1 rounded transition-colors">
+                            Details
+                        </a>
+                        <a href="/jobs/{{ job.id }}" class="text-xs bg-blue-800 hover:bg-blue-700 text-blue-200 px-2 py-1 rounded transition-colors">
+                            Re-translate
+                        </a>
+                        {% elif job.status == 'awaiting_review' %}
+                        <a href="/jobs/{{ job.id }}/edit" class="text-xs bg-yellow-800 hover:bg-yellow-700 text-yellow-200 px-2 py-1 rounded transition-colors">
+                            Review
+                        </a>
+                        {% elif job.status == 'failed' %}
+                        <a href="/jobs/{{ job.id }}" class="text-xs bg-red-800 hover:bg-red-700 text-red-200 px-2 py-1 rounded transition-colors">
+                            View Error
+                        </a>
+                        {% else %}
+                        <a href="/jobs/{{ job.id }}" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-1 rounded transition-colors">
+                            Status
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
 
@@ -127,6 +190,18 @@
         if (!selectedFile || !targetLang.value) {
             e.preventDefault();
             return;
+        }
+    });
+
+    // Convert UTC timestamps to local time
+    document.querySelectorAll("time.local-time").forEach(function(el) {
+        var dt = el.getAttribute("datetime");
+        if (dt) {
+            var d = new Date(dt.endsWith("Z") ? dt : dt + "Z");
+            if (!isNaN(d.getTime())) {
+                el.textContent = d.toLocaleDateString(undefined, {year:"numeric", month:"short", day:"numeric"})
+                    + " " + d.toLocaleTimeString(undefined, {hour:"2-digit", minute:"2-digit"});
+            }
         }
     });
 })();

@@ -37,6 +37,7 @@ class Job(Base):
 
     # Metadata
     error_message = Column(Text, nullable=True)
+    stage_log = Column(Text, nullable=True)  # JSON array of {"ts": "...", "msg": "..."} log entries
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -61,6 +62,7 @@ class Job(Base):
             "output_file": self.output_file,
             "report_json": self.report_json,
             "error_message": self.error_message,
+            "stage_log": self.stage_log,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

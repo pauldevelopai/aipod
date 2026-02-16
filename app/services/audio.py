@@ -123,50 +123,118 @@ def normalize_audio(audio_path: str, target_dbfs: float = -16.0) -> AudioSegment
     return audio.apply_gain(change_in_dbfs)
 
 
-def mix_with_background(
+def smart_mix(
     tts_path: str,
     background_path: str,
     output_path: str,
+    transcript_segments: list[dict],
     bg_volume_db: float = -12.0,
+    crossfade_ms: int = 500,
 ) -> str:
-    """Mix TTS audio with background track (music/SFX).
+    """Smart mix: preserve intro/outro music at full volume, mix TTS over attenuated middle.
 
-    The background is attenuated by bg_volume_db. If the background is shorter
-    than the TTS, it is looped. If longer, it is trimmed.
+    Uses transcript segment timestamps to detect:
+    - Intro: background before first speech (full volume)
+    - Middle: background during speech section (attenuated, mixed with TTS)
+    - Outro: background after last speech (full volume)
+
+    If TTS is longer/shorter than original speech, the middle background is
+    looped or trimmed so the intro and outro still fit properly.
     """
     tts = AudioSegment.from_file(tts_path)
     background = AudioSegment.from_file(background_path)
 
-    # Attenuate background
-    background = background + bg_volume_db
+    tts = ensure_stereo(tts)
+    background = ensure_stereo(background)
+    background = background.set_frame_rate(tts.frame_rate)
 
-    # Handle duration mismatch
-    tts_len = len(tts)
     bg_len = len(background)
 
     if bg_len == 0:
-        # Empty background — nothing to mix, just export TTS as-is
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         tts.export(output_path, format="mp3", bitrate="192k")
-        logger.info(f"Background is empty, exporting TTS only: {output_path}")
+        logger.info("Background is empty, exporting TTS only")
         return output_path
 
-    if bg_len < tts_len:
-        # Loop background to match TTS duration
-        loops_needed = (tts_len // bg_len) + 1
-        background = background * loops_needed
+    # Find intro/outro boundaries from original transcript timestamps
+    if transcript_segments:
+        first_speech_ms = int(transcript_segments[0].get("start_time", 0) * 1000)
+        last_speech_ms = int(transcript_segments[-1].get("end_time", 0) * 1000)
+    else:
+        first_speech_ms = 0
+        last_speech_ms = bg_len
 
-    # Trim background to match TTS length
-    background = background[:tts_len]
+    # Clamp to actual background length
+    first_speech_ms = min(first_speech_ms, bg_len)
+    last_speech_ms = min(last_speech_ms, bg_len)
 
-    # Ensure same channels and sample rate
-    background = background.set_channels(tts.channels)
-    background = background.set_frame_rate(tts.frame_rate)
+    # Split background into three sections
+    intro_bg = background[:first_speech_ms]
+    middle_bg = background[first_speech_ms:last_speech_ms]
+    outro_bg = background[last_speech_ms:]
 
-    # Overlay background under TTS
-    mixed = tts.overlay(background)
+    intro_len = len(intro_bg)
+    middle_len = len(middle_bg)
+    outro_len = len(outro_bg)
+    tts_len = len(tts)
+
+    logger.info(f"Smart mix: intro={intro_len}ms, middle_bg={middle_len}ms, "
+                f"outro={outro_len}ms, tts={tts_len}ms")
+
+    # Attenuate the middle background
+    if middle_len > 0:
+        middle_bg_quiet = middle_bg + bg_volume_db
+    else:
+        middle_bg_quiet = AudioSegment.empty()
+
+    # Adjust middle background to match TTS duration
+    if tts_len > 0 and middle_len > 0:
+        if tts_len > middle_len:
+            # TTS is longer than original speech — loop the middle background
+            repeats = (tts_len // middle_len) + 1
+            middle_bg_quiet = (middle_bg_quiet * repeats)[:tts_len]
+        elif tts_len < middle_len:
+            # TTS is shorter — trim middle background
+            middle_bg_quiet = middle_bg_quiet[:tts_len]
+
+    # Mix TTS with the attenuated middle background
+    if len(middle_bg_quiet) > 0 and tts_len > 0:
+        # Ensure same length for overlay
+        mbq_len = len(middle_bg_quiet)
+        if tts_len > mbq_len:
+            middle_bg_quiet = middle_bg_quiet + AudioSegment.silent(
+                duration=tts_len - mbq_len, frame_rate=tts.frame_rate
+            )
+        elif mbq_len > tts_len:
+            tts = tts + AudioSegment.silent(
+                duration=mbq_len - tts_len, frame_rate=tts.frame_rate
+            )
+        mixed_middle = tts.overlay(middle_bg_quiet)
+    else:
+        mixed_middle = tts
+
+    # Stitch: intro (full volume) + mixed middle + outro (full volume)
+    # Use crossfades for smooth transitions
+    final = AudioSegment.empty()
+
+    if intro_len > 0:
+        final = intro_bg
+        if len(mixed_middle) > 0:
+            if intro_len > crossfade_ms and len(mixed_middle) > crossfade_ms:
+                final = final.append(mixed_middle, crossfade=crossfade_ms)
+            else:
+                final = final + mixed_middle
+    else:
+        final = mixed_middle
+
+    if outro_len > 0:
+        if len(final) > crossfade_ms and outro_len > crossfade_ms:
+            final = final.append(outro_bg, crossfade=crossfade_ms)
+        else:
+            final = final + outro_bg
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    mixed.export(output_path, format="mp3", bitrate="192k")
-    logger.info(f"Mixed TTS ({tts_len}ms) with background, output: {output_path}")
+    final.export(output_path, format="mp3", bitrate="192k")
+    logger.info(f"Smart mix complete: intro={intro_len}ms + speech={len(mixed_middle)}ms "
+                f"+ outro={outro_len}ms = {len(final)}ms total, output: {output_path}")
     return output_path

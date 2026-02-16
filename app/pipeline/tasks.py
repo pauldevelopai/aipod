@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.pipeline.worker import celery_app
@@ -43,23 +44,44 @@ def _get_job(job_id: str) -> dict:
         db.close()
 
 
+def _log_stage(job_id: str, message: str):
+    """Append a timestamped log entry to the job's stage_log (visible in UI)."""
+    db = SessionLocal()
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            return
+        existing = json.loads(job.stage_log) if job.stage_log else []
+        existing.append({
+            "ts": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            "msg": message,
+        })
+        job.stage_log = json.dumps(existing)
+        db.commit()
+    finally:
+        db.close()
+    logger.info(f"Job {job_id}: {message}")
+
+
 @celery_app.task(bind=True, name="aipod.run_pipeline")
 def run_pipeline(self, job_id: str, start_from: int = 1):
     """Run pipeline stages 1-6.
     start_from allows resuming from a specific stage."""
     try:
-        # Clear any stale error from previous run
-        _update_job(job_id, error_message=None)
+        # Clear any stale error and log from previous run
+        _update_job(job_id, error_message=None, stage_log=None)
+        _log_stage(job_id, f"Pipeline starting from stage {start_from}")
         job = _get_job(job_id)
 
         if start_from <= 1:
-            # Skip if cleaned file already exists on disk
             cleaned = job.get("cleaned_file")
             if cleaned and Path(cleaned).exists():
-                logger.info(f"Job {job_id}: Stage 1 skipped - cleaned file exists")
+                _log_stage(job_id, "Stage 1 skipped — cleaned audio already exists")
             else:
                 _update_job(job_id, status="processing", current_stage=1, stage_name="Audio Cleanup (Auphonic)")
+                _log_stage(job_id, "Stage 1: Uploading to Auphonic for audio cleanup...")
                 stage_1_audio_cleanup(job_id)
+                _log_stage(job_id, "Stage 1 complete — audio cleaned")
         else:
             _update_job(job_id, status="processing")
 
@@ -67,31 +89,38 @@ def run_pipeline(self, job_id: str, start_from: int = 1):
             job = _get_job(job_id)
             vocals = job.get("vocals_file")
             if vocals and Path(vocals).exists():
-                logger.info(f"Job {job_id}: Stage 2 skipped - separation already done")
+                _log_stage(job_id, "Stage 2 skipped — vocals/background already separated")
             else:
-                _update_job(job_id, current_stage=2, stage_name="Source Separation (Demucs)")
+                _update_job(job_id, current_stage=2, stage_name="Source Separation")
+                _log_stage(job_id, "Stage 2: Separating vocals from music/SFX (BS-RoFormer model, CPU)...")
                 stage_2_source_separation(job_id)
+                _log_stage(job_id, "Stage 2 complete — vocals and background tracks ready")
 
         if start_from <= 3:
             job = _get_job(job_id)
             transcript = job.get("transcript_json")
             if transcript and json.loads(transcript):
-                logger.info(f"Job {job_id}: Stage 3 skipped - transcript exists")
+                _log_stage(job_id, "Stage 3 skipped — transcript already exists")
             else:
                 _update_job(job_id, current_stage=3, stage_name="Transcription + Diarization (Whisper + pyannote)")
+                _log_stage(job_id, "Stage 3: Running speaker diarization + Whisper transcription...")
                 stage_3_transcription(job_id)
 
                 _update_job(job_id, current_stage=3, stage_name="Detecting Languages")
+                _log_stage(job_id, "Stage 3b: Detecting languages in transcript segments...")
                 stage_3b_language_detection(job_id)
+                _log_stage(job_id, "Stage 3 complete — transcript + languages ready")
 
         if start_from <= 4:
             job = _get_job(job_id)
             translated = job.get("translated_json")
             if translated and json.loads(translated):
-                logger.info(f"Job {job_id}: Stage 4 skipped - translation exists")
+                _log_stage(job_id, "Stage 4 skipped — translation already exists")
             else:
                 _update_job(job_id, current_stage=4, stage_name="Translation (Google + Claude)")
+                _log_stage(job_id, "Stage 4: Translating with Google Translate + Claude polish...")
                 stage_4_translation(job_id)
+                _log_stage(job_id, "Stage 4 complete — translation polished")
 
         # Use translated_json as edited_json (no human review step)
         job = _get_job(job_id)
@@ -99,22 +128,33 @@ def run_pipeline(self, job_id: str, start_from: int = 1):
             _update_job(job_id, edited_json=job.get("translated_json"))
 
         if start_from <= 5:
-            _update_job(job_id, current_stage=5, stage_name="Voice Cloning (ElevenLabs)")
-            stage_5_voice_cloning(job_id)
+            job = _get_job(job_id)
+            voice_map = job.get("voice_map_json")
+            if voice_map and json.loads(voice_map):
+                _log_stage(job_id, "Stage 5 skipped — voice clones already cached")
+            else:
+                _update_job(job_id, current_stage=5, stage_name="Voice Cloning (ElevenLabs)")
+                _log_stage(job_id, "Stage 5: Extracting speaker samples and cloning voices...")
+                stage_5_voice_cloning(job_id)
+                _log_stage(job_id, "Stage 5 complete — voices cloned")
 
         if start_from <= 6:
             _update_job(job_id, current_stage=6, stage_name="Speech Generation + Mix (ElevenLabs TTS)")
+            _log_stage(job_id, "Stage 6: Generating speech for each segment...")
             stage_6_speech_generation(job_id)
+            _log_stage(job_id, "Stage 6 complete — final audio mixed")
 
         # Generate pipeline report
         _update_job(job_id, stage_name="Generating Report")
+        _log_stage(job_id, "Generating pipeline quality report...")
         generate_report(job_id)
 
         _update_job(job_id, status="completed", stage_name="Complete")
-        logger.info(f"Job {job_id}: Pipeline completed")
+        _log_stage(job_id, "Pipeline completed successfully")
 
     except Exception as e:
         logger.exception(f"Pipeline failed for job {job_id}")
+        _log_stage(job_id, f"FAILED: {e}")
         _update_job(job_id, status="failed", error_message=str(e))
         raise
 
@@ -133,20 +173,22 @@ def stage_1_audio_cleanup(job_id: str):
     original_file = job["original_file"]
     cleaned_path = str(BASE_DIR / settings.output_dir / job_id / "cleaned.mp3")
 
+    _log_stage(job_id, f"Uploading {Path(original_file).name} to Auphonic...")
     uuid = _run_async(auphonic.process_audio(original_file, cleaned_path))
 
     _update_job(job_id, cleaned_file=cleaned_path, auphonic_production_id=uuid)
-    logger.info(f"Job {job_id}: Stage 1 complete - audio cleaned")
+    _log_stage(job_id, f"Auphonic production {uuid} complete, cleaned audio saved")
 
 
 def stage_2_source_separation(job_id: str):
-    """Stage 2: Separate vocals from music/SFX using Demucs."""
+    """Stage 2: Separate vocals from music/SFX using audio-separator."""
     from app.services.separation import separate
 
     job = _get_job(job_id)
     cleaned_file = job["cleaned_file"]
     separation_dir = str(BASE_DIR / settings.output_dir / job_id / "separation")
 
+    _log_stage(job_id, "Running BS-RoFormer source separation (this may take a few minutes)...")
     result = separate(cleaned_file, separation_dir)
 
     _update_job(
@@ -154,7 +196,9 @@ def stage_2_source_separation(job_id: str):
         vocals_file=result["vocals"],
         background_file=result["no_vocals"],
     )
-    logger.info(f"Job {job_id}: Stage 2 complete - source separation done")
+    vocals_exists = Path(result["vocals"]).exists()
+    bg_exists = Path(result["no_vocals"]).exists()
+    _log_stage(job_id, f"Separation done: vocals={vocals_exists}, background={bg_exists}")
 
 
 def stage_3_transcription(job_id: str):
@@ -163,21 +207,22 @@ def stage_3_transcription(job_id: str):
     from app.services.diarize import diarize
 
     job = _get_job(job_id)
-    # Use vocals track if available, otherwise fall back to cleaned file
     audio_file = job.get("vocals_file") or job["cleaned_file"]
 
-    # Run pyannote diarization first (returns None if unavailable)
+    _log_stage(job_id, "Running pyannote speaker diarization...")
     diarization_segments = diarize(audio_file)
+    if diarization_segments:
+        speakers = set(s.get("speaker") for s in diarization_segments)
+        _log_stage(job_id, f"Diarization found {len(speakers)} speakers, {len(diarization_segments)} segments")
+    else:
+        _log_stage(job_id, "pyannote unavailable, will use gap-based speaker detection")
 
-    # Transcribe with diarization info
+    _log_stage(job_id, "Running Whisper transcription...")
     segments = transcribe(audio_file, diarization_segments=diarization_segments)
 
-    _update_job(
-        job_id,
-        transcript_json=json.dumps(segments),
-    )
-    logger.info(f"Job {job_id}: Stage 3 complete - {len(segments)} segments transcribed"
-                f" ({'pyannote' if diarization_segments else 'gap-based'} diarization)")
+    _update_job(job_id, transcript_json=json.dumps(segments))
+    method = "pyannote" if diarization_segments else "gap-based"
+    _log_stage(job_id, f"Transcribed {len(segments)} segments ({method} diarization)")
 
 
 def stage_3b_language_detection(job_id: str):
@@ -187,14 +232,11 @@ def stage_3b_language_detection(job_id: str):
     job = _get_job(job_id)
     segments = json.loads(job["transcript_json"])
 
-    # Tag each segment with its detected language
     segments_with_langs = detect_segments_languages(segments)
-
-    # Build a summary of all detected languages
     summary = summarize_detected_languages(segments_with_langs)
 
     lang_names = ", ".join(f"{l['name']} ({l['percentage']}%)" for l in summary)
-    logger.info(f"Job {job_id}: Detected languages: {lang_names}")
+    _log_stage(job_id, f"Detected languages: {lang_names}")
 
     _update_job(
         job_id,
@@ -211,18 +253,17 @@ def stage_4_translation(job_id: str):
     segments = json.loads(job["transcript_json"])
     target_lang = get_language(job["target_language"])
 
-    # Google Translate uses ISO codes (e.g. "en", "fr")
     target_code = target_lang["code"] if target_lang else job["target_language"]
     target_name = target_lang["name"] if target_lang else job["target_language"]
 
-    # Pass 1: Google Translate raw translation (uses per-segment detected_language)
+    _log_stage(job_id, f"Pass 1: Google Translate → {target_name} ({len(segments)} segments)...")
     translated = _run_async(deepl.translate_segments(segments, target_code))
 
-    # Pass 2: Claude polishing (uses per-segment detected_language names)
+    _log_stage(job_id, f"Pass 2: Claude polishing {len(translated)} translated segments...")
     polished = _run_async(claude.polish_segments(translated, target_name))
 
     _update_job(job_id, translated_json=json.dumps(polished))
-    logger.info(f"Job {job_id}: Stage 4 complete - {len(polished)} segments translated and polished")
+    _log_stage(job_id, f"Translation complete: {len(polished)} segments → {target_name}")
 
 
 def stage_5_voice_cloning(job_id: str):
@@ -236,29 +277,25 @@ def stage_5_voice_cloning(job_id: str):
     segments = json.loads(job["transcript_json"])
     samples_dir = str(BASE_DIR / settings.output_dir / job_id / "speaker_samples")
 
-    # Extract speaker samples
+    _log_stage(job_id, "Extracting best audio sample for each speaker...")
     speaker_samples = audio.extract_best_speaker_samples(original_file, segments, samples_dir)
+    _log_stage(job_id, f"Found {len(speaker_samples)} speakers, checking fingerprint cache...")
 
-    # Clone each voice (with fingerprint cache)
     voice_map = {}
     for speaker, sample_path in speaker_samples.items():
-        # Compute speaker embedding
         embedding = fingerprint.compute_embedding(sample_path)
 
         if embedding is not None:
-            # Check fingerprint cache
             cached = fingerprint.find_matching_profile(embedding)
             if cached:
-                logger.info(f"Job {job_id}: Reusing cached voice for {speaker} "
-                            f"(matched profile '{cached.name}')")
+                _log_stage(job_id, f"Reusing cached voice for {speaker} (matched '{cached.name}')")
                 voice_map[speaker] = cached.elevenlabs_voice_id
                 continue
 
-        # No cache match — clone via ElevenLabs
+        _log_stage(job_id, f"Cloning voice for {speaker} via ElevenLabs...")
         voice_id = _run_async(elevenlabs.clone_voice(f"aipod_{job_id[:8]}_{speaker}", sample_path))
         voice_map[speaker] = voice_id
 
-        # Cache the new voice profile
         if embedding is not None:
             fingerprint.create_profile(
                 name=speaker,
@@ -268,11 +305,11 @@ def stage_5_voice_cloning(job_id: str):
             )
 
     _update_job(job_id, voice_map_json=json.dumps(voice_map))
-    logger.info(f"Job {job_id}: Stage 5 complete - {len(voice_map)} voices cloned")
+    _log_stage(job_id, f"Voice cloning complete: {len(voice_map)} voices ready")
 
 
 def stage_6_speech_generation(job_id: str):
-    """Stage 6: Generate TTS for each segment, stitch, and mix with background."""
+    """Stage 6: Generate TTS for each segment, stitch, and smart-mix with background."""
     from app.services import elevenlabs, audio as audio_service
 
     job = _get_job(job_id)
@@ -281,6 +318,9 @@ def stage_6_speech_generation(job_id: str):
     voice_map = json.loads(job["voice_map_json"])
     segments_dir = str(BASE_DIR / settings.output_dir / job_id / "tts_segments")
     Path(segments_dir).mkdir(parents=True, exist_ok=True)
+
+    total_segments = sum(1 for s in segments if voice_map.get(s.get("speaker", "")) and s.get("translated_text", s.get("text", "")).strip())
+    _log_stage(job_id, f"Generating TTS for {total_segments} segments via ElevenLabs...")
 
     segment_files = []
     for i, segment in enumerate(segments):
@@ -295,34 +335,39 @@ def stage_6_speech_generation(job_id: str):
         _run_async(elevenlabs.text_to_speech(text, voice_id, out_path))
         segment_files.append(out_path)
 
-    logger.info(f"Job {job_id}: {len(segment_files)} TTS segments generated, stitching...")
+        if len(segment_files) % 10 == 0:
+            _log_stage(job_id, f"TTS progress: {len(segment_files)}/{total_segments} segments done")
 
-    # Stitch all segments into TTS output
+    _log_stage(job_id, f"All {len(segment_files)} TTS segments generated, stitching audio...")
+
     tts_path = str(BASE_DIR / settings.output_dir / job_id / "tts_stitched.mp3")
     audio_service.stitch_segments(segment_files, tts_path)
 
-    # Mix with background track if available
+    transcript_segments = json.loads(job.get("transcript_json") or "[]")
     background_file = job.get("background_file")
     final_path = str(BASE_DIR / settings.output_dir / job_id / "final.mp3")
 
     if background_file and Path(background_file).exists():
-        logger.info(f"Job {job_id}: Mixing TTS with background audio")
-        audio_service.mix_with_background(tts_path, background_file, final_path, bg_volume_db=-12.0)
+        _log_stage(job_id, "Smart mixing TTS with background audio (preserving intro/outro)...")
+        audio_service.smart_mix(
+            tts_path, background_file, final_path,
+            transcript_segments=transcript_segments,
+            bg_volume_db=-12.0,
+        )
+        _log_stage(job_id, "Smart mix complete — background music preserved with intro/outro")
     else:
-        # No background — just use the stitched TTS as final
-        logger.info(f"Job {job_id}: No background track, using TTS as final output")
+        _log_stage(job_id, "No background track available — using TTS-only output")
         Path(final_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(tts_path).rename(final_path)
+        import shutil
+        shutil.move(tts_path, final_path)
 
     _update_job(job_id, output_file=final_path)
-    logger.info(f"Job {job_id}: Stage 6 complete - final audio ready")
 
 
 def generate_report(job_id: str):
-    """Generate a pipeline quality report using Claude."""
+    """Generate a pipeline quality report from real job data."""
     from app.services import claude
 
     job = _get_job(job_id)
     report = _run_async(claude.generate_report(job))
     _update_job(job_id, report_json=json.dumps({"report": report}))
-    logger.info(f"Job {job_id}: Report generated")

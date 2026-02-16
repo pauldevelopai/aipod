@@ -20,7 +20,7 @@
         <div class="mb-4">
             <div class="flex justify-between text-sm text-gray-400 mb-1">
                 <span id="stage-label">{{ job.stage_name or 'Queued' }}</span>
-                <span id="stage-counter">{{ job.current_stage }}/6</span>
+                <span id="stage-counter">{% if job.status == 'completed' %}6/6{% else %}{{ job.current_stage }}/6{% endif %}</span>
             </div>
             <div class="w-full bg-gray-800 rounded-full h-3">
                 <div id="progress-bar" class="h-3 rounded-full transition-all duration-500
@@ -28,7 +28,7 @@
                     {% elif job.status == 'failed' %}bg-red-500
                     {% elif job.status == 'awaiting_review' %}bg-yellow-500
                     {% else %}bg-blue-500{% endif %}"
-                    style="width: {{ (job.current_stage / 6 * 100) | int }}%">
+                    style="width: {% if job.status == 'completed' %}100{% else %}{{ (job.current_stage / 6 * 100) | int }}{% endif %}%">
                 </div>
             </div>
         </div>
@@ -52,19 +52,29 @@
             {% if num > 0 %}
             <div class="flex items-center gap-3 stage-item" data-stage="{{ num }}">
                 <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
-                    {% if job.current_stage > num %}bg-green-600 text-white
+                    {% if job.status == 'completed' %}bg-green-600 text-white
+                    {% elif job.current_stage > num %}bg-green-600 text-white
                     {% elif job.current_stage == num and job.status == 'processing' %}bg-blue-600 text-white animate-pulse
                     {% elif job.current_stage == num and job.status == 'awaiting_review' %}bg-yellow-600 text-white
                     {% else %}bg-gray-700 text-gray-500{% endif %}">
-                    {% if job.current_stage > num %}&#10003;{% else %}{{ num }}{% endif %}
+                    {% if job.status == 'completed' or job.current_stage > num %}&#10003;{% else %}{{ num }}{% endif %}
                 </div>
-                <span class="text-sm {% if job.current_stage == num %}text-white font-medium{% elif job.current_stage > num %}text-gray-400{% else %}text-gray-600{% endif %}">
+                <span class="text-sm {% if job.status == 'completed' %}text-gray-400{% elif job.current_stage == num %}text-white font-medium{% elif job.current_stage > num %}text-gray-400{% else %}text-gray-600{% endif %}">
                     {{ name }}
                 </span>
             </div>
             {% endif %}
             {% endfor %}
         </div>
+    </div>
+
+    <!-- Live Pipeline Log -->
+    <div id="log-panel" class="bg-gray-950 rounded-xl border border-gray-800 p-4 mb-6">
+        <div class="flex items-center justify-between mb-2">
+            <span class="text-xs text-gray-500 uppercase tracking-wider font-medium">Pipeline Log</span>
+            <span id="log-status" class="text-xs text-gray-600"></span>
+        </div>
+        <div id="log-entries" class="space-y-0.5 max-h-64 overflow-y-auto font-mono text-xs"></div>
     </div>
 
     <!-- Error Message -->
@@ -99,6 +109,35 @@
             New Job
         </a>
     </div>
+
+    <!-- Re-translate Section (completed jobs only) -->
+    {% if job.status == 'completed' %}
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-6 mt-6">
+        <h2 class="text-lg font-semibold mb-3">Translate to Another Language</h2>
+        <p class="text-gray-400 text-sm mb-4">Reuses the existing audio processing and cloned voices — only translation and speech generation will run.</p>
+        <form action="/jobs/{{ job.id }}/retranslate" method="post" class="flex gap-3 items-end">
+            <div class="flex-1">
+                <label for="retranslate-lang" class="block text-sm text-gray-400 mb-1">New target language</label>
+                <select name="target_language" id="retranslate-lang" required
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">Select language...</option>
+                    {% for group_name, group_langs in language_groups %}
+                    <optgroup label="{{ group_name }}">
+                        {% for lang in group_langs %}
+                        <option value="{{ lang.code }}" {% if lang.code == job.target_language %}disabled{% endif %}>
+                            {{ lang.name }}{% if lang.code == job.target_language %} (current){% endif %}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors whitespace-nowrap">
+                Re-translate
+            </button>
+        </form>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
 

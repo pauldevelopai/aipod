@@ -9,21 +9,88 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 from sqlalchemy.orm import Session
 
-from app.config import BASE_DIR, SUPPORTED_LANGUAGES, get_language
+from app.config import BASE_DIR, SUPPORTED_LANGUAGES, LANGUAGE_GROUPS, get_language
 from app.database import get_db
 from app.models import Job
 
 
 def _md_to_html(text: str) -> str:
-    """Simple markdown to HTML for report rendering."""
-    html = re.sub(r"^### (.+)$", r"<h3 class='text-white font-semibold mt-4 mb-2'>\1</h3>", text, flags=re.MULTILINE)
-    html = re.sub(r"^## (.+)$", r"<h3 class='text-white font-semibold mt-4 mb-2'>\1</h3>", html, flags=re.MULTILINE)
-    html = re.sub(r"\*\*(.+?)\*\*", r"<strong class='text-white'>\1</strong>", html)
-    html = re.sub(r"^- (.+)$", r"<li class='ml-4'>\1</li>", html, flags=re.MULTILINE)
-    html = re.sub(r"(<li.*?</li>\n?)+", r"<ul class='list-disc mb-3'>\g<0></ul>", html)
-    html = html.replace("\n\n", "</p><p class='mb-3'>")
-    html = f"<p class='mb-3'>{html}</p>"
-    return html
+    """Convert markdown report to HTML. Handles headers, bold, and nested bullets."""
+    lines = text.split("\n")
+    html_parts = []
+    in_list = False
+    in_sublist = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Empty line — close any open lists
+        if not stripped:
+            if in_sublist:
+                html_parts.append("</ul>")
+                in_sublist = False
+            if in_list:
+                html_parts.append("</ul>")
+                in_list = False
+            continue
+
+        # Bold: **text**
+        stripped = re.sub(r"\*\*(.+?)\*\*", r"<strong class='text-white'>\1</strong>", stripped)
+
+        # Headers
+        if stripped.startswith("### "):
+            if in_sublist:
+                html_parts.append("</ul>")
+                in_sublist = False
+            if in_list:
+                html_parts.append("</ul>")
+                in_list = False
+            html_parts.append(f"<h3 class='text-white font-semibold mt-5 mb-2'>{stripped[4:]}</h3>")
+        elif stripped.startswith("## "):
+            if in_sublist:
+                html_parts.append("</ul>")
+                in_sublist = False
+            if in_list:
+                html_parts.append("</ul>")
+                in_list = False
+            html_parts.append(f"<h3 class='text-white font-semibold mt-5 mb-2'>{stripped[3:]}</h3>")
+
+        # Sub-bullet (indented)
+        elif line.startswith("  - "):
+            if not in_sublist:
+                in_sublist = True
+                html_parts.append("<ul class='list-disc ml-8 mb-1'>")
+            content = stripped[2:]  # remove "- "
+            html_parts.append(f"<li class='text-gray-400 text-sm'>{content}</li>")
+
+        # Top-level bullet
+        elif stripped.startswith("- "):
+            if in_sublist:
+                html_parts.append("</ul>")
+                in_sublist = False
+            if not in_list:
+                in_list = True
+                html_parts.append("<ul class='list-disc ml-4 mb-2'>")
+            content = stripped[2:]
+            html_parts.append(f"<li class='mb-1'>{content}</li>")
+
+        # Plain text
+        else:
+            if in_sublist:
+                html_parts.append("</ul>")
+                in_sublist = False
+            if in_list:
+                html_parts.append("</ul>")
+                in_list = False
+            html_parts.append(f"<p class='mb-2 text-gray-300'>{stripped}</p>")
+
+    # Close any open lists
+    if in_sublist:
+        html_parts.append("</ul>")
+    if in_list:
+        html_parts.append("</ul>")
+
+    return "\n".join(html_parts)
 
 
 def _format_datetime(dt) -> str:
@@ -88,6 +155,7 @@ async def download_page(job_id: str, request: Request, db: Session = Depends(get
         "request": request,
         "job": job.to_dict(),
         "languages": SUPPORTED_LANGUAGES,
+        "language_groups": LANGUAGE_GROUPS,
         "report": Markup(report_html),
         "target_lang_name": target_lang_name,
         "created_at": _format_datetime(job.created_at),

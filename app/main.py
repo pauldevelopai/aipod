@@ -26,8 +26,27 @@ def on_startup():
 
 @app.get("/")
 async def index(request: Request):
-    from app.config import SUPPORTED_LANGUAGES
+    from app.config import SUPPORTED_LANGUAGES, LANGUAGE_GROUPS, get_language
+    from app.database import get_db
+    from app.models import Job
+
+    db = next(get_db())
+    try:
+        jobs = db.query(Job).order_by(Job.created_at.desc()).limit(20).all()
+        past_jobs = []
+        for job in jobs:
+            lang = get_language(job.target_language)
+            lang_name = lang["name"] if lang else job.target_language
+            past_jobs.append({
+                **job.to_dict(),
+                "target_lang_name": lang_name,
+            })
+    finally:
+        db.close()
+
     return templates.TemplateResponse("index.html", {
         "request": request,
         "languages": SUPPORTED_LANGUAGES,
+        "language_groups": LANGUAGE_GROUPS,
+        "past_jobs": past_jobs,
     })

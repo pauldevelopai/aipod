@@ -10,7 +10,7 @@
             </svg>
         </div>
         <h1 class="text-2xl font-bold">Translation Complete</h1>
-        <p class="text-gray-400 mt-1">Completed {{ completed_at }}</p>
+        <p class="text-gray-400 mt-1">Completed <time class="local-time" datetime="{{ job.updated_at }}">{{ completed_at }}</time></p>
     </div>
 
     <!-- Original Audio Player -->
@@ -28,7 +28,12 @@
     <div class="bg-gray-900 rounded-xl border border-green-800 p-6 mb-6">
         <div class="flex justify-between items-center mb-3">
             <label class="text-sm font-medium text-green-300">Translated Audio ({{ target_lang_name }})</label>
-            <span class="text-xs text-gray-500">{{ completed_at }}</span>
+            <a href="/jobs/{{ job.id }}/download/file" class="inline-flex items-center gap-1 text-xs bg-green-800 hover:bg-green-700 text-green-200 px-3 py-1 rounded-lg transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                </svg>
+                Download MP3
+            </a>
         </div>
         <audio controls class="w-full" src="/jobs/{{ job.id }}/download/file" preload="metadata"></audio>
     </div>
@@ -56,11 +61,11 @@
             </div>
             <div>
                 <span class="text-gray-500">Started</span>
-                <p class="text-gray-300">{{ created_at }}</p>
+                <p class="text-gray-300"><time class="local-time" datetime="{{ job.created_at }}">{{ created_at }}</time></p>
             </div>
             <div>
                 <span class="text-gray-500">Completed</span>
-                <p class="text-gray-300">{{ completed_at }}</p>
+                <p class="text-gray-300"><time class="local-time" datetime="{{ job.updated_at }}">{{ completed_at }}</time></p>
             </div>
         </div>
     </div>
@@ -78,5 +83,47 @@
             New Job
         </a>
     </div>
+
+    <!-- Re-translate Section -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-6 mt-6 text-left">
+        <h2 class="text-lg font-semibold mb-3">Translate to Another Language</h2>
+        <p class="text-gray-400 text-sm mb-4">Reuses the existing audio processing and cloned voices — only translation and speech generation will run.</p>
+        <form action="/jobs/{{ job.id }}/retranslate" method="post" class="flex gap-3 items-end">
+            <div class="flex-1">
+                <label for="retranslate-lang" class="block text-sm text-gray-400 mb-1">New target language</label>
+                <select name="target_language" id="retranslate-lang" required
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">Select language...</option>
+                    {% for group_name, group_langs in language_groups %}
+                    <optgroup label="{{ group_name }}">
+                        {% for lang in group_langs %}
+                        <option value="{{ lang.code }}" {% if lang.code == job.target_language %}disabled{% endif %}>
+                            {{ lang.name }}{% if lang.code == job.target_language %} (current){% endif %}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors whitespace-nowrap">
+                Re-translate
+            </button>
+        </form>
+    </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("time.local-time").forEach(function(el) {
+    var dt = el.getAttribute("datetime");
+    if (dt) {
+        var d = new Date(dt.endsWith("Z") ? dt : dt + "Z");
+        if (!isNaN(d.getTime())) {
+            el.textContent = d.toLocaleDateString(undefined, {year:"numeric", month:"short", day:"numeric"})
+                + " " + d.toLocaleTimeString(undefined, {hour:"2-digit", minute:"2-digit"});
+        }
+    }
+});
+</script>
 {% endblock %}

@@ -20,19 +20,6 @@ Rules:
 - Keep speaker labels and timestamps unchanged
 - Return ONLY the polished translation text, nothing else"""
 
-REPORT_SYSTEM_PROMPT = """You are a quality analyst for AiPod, a podcast translation pipeline.
-You receive statistics about a completed translation job and write a clear, conversational report
-for the user explaining what worked well, what had issues, and what they should know.
-
-Write in a friendly, professional tone. Use short paragraphs. Be specific with numbers and examples.
-Structure your report with these sections (use markdown):
-- **Summary** — one-line overview of the job result
-- **What Worked Well** — stages and aspects that performed successfully
-- **Issues & Limitations** — anything that didn't work perfectly, with specifics
-- **Recommendations** — actionable suggestions for better results next time
-
-Keep it concise but thorough. Don't sugarcoat problems."""
-
 
 def _llm_complete(system: str, user_message: str, max_tokens: int = 1024) -> str:
     """Call an LLM: tries Anthropic first, falls back to OpenAI."""
@@ -118,14 +105,18 @@ async def polish_segments(
     return polished
 
 
-def _compute_report_stats(job_data: dict) -> dict:
-    """Compute pipeline statistics for the report."""
+async def generate_report(job_data: dict) -> str:
+    """Build a pipeline report from real job data only — no LLM, no hallucination."""
+    from app.config import get_language
+
     segments = json.loads(job_data.get("transcript_json") or "[]")
     translated = json.loads(job_data.get("edited_json") or job_data.get("translated_json") or "[]")
     detected_langs = json.loads(job_data.get("detected_languages_json") or "[]")
     voice_map = json.loads(job_data.get("voice_map_json") or "{}")
 
     total_segments = len(translated)
+
+    # Find untranslated segments (where original == translated text)
     untranslated = []
     for i, s in enumerate(translated):
         orig = s.get("text", "").strip()
@@ -133,7 +124,7 @@ def _compute_report_stats(job_data: dict) -> dict:
         if orig == trans and orig:
             det = s.get("detected_language", {})
             lang_str = det.get("name", "Unknown") if isinstance(det, dict) else str(det)
-            untranslated.append({"index": i, "text": orig[:100], "language": lang_str})
+            untranslated.append({"index": i, "text": orig[:80], "language": lang_str})
 
     translated_count = total_segments - len(untranslated)
     translation_pct = round(translated_count / total_segments * 100, 1) if total_segments else 0
@@ -141,40 +132,65 @@ def _compute_report_stats(job_data: dict) -> dict:
     duration_secs = max((s.get("end_time", 0) for s in segments), default=0)
     duration_min = round(duration_secs / 60, 1)
 
-    return {
-        "total_segments": total_segments,
-        "translated_count": translated_count,
-        "translation_pct": translation_pct,
-        "untranslated": untranslated,
-        "duration_min": duration_min,
-        "detected_langs": detected_langs,
-        "voice_map": voice_map,
-        "target_language": job_data.get("target_language", "unknown"),
-    }
+    num_speakers = len(voice_map)
+    speaker_names = ", ".join(voice_map.keys()) if voice_map else "None detected"
 
+    target_code = job_data.get("target_language", "unknown")
+    target_lang = get_language(target_code)
+    target_name = target_lang["name"] if target_lang else target_code
 
-async def generate_report(job_data: dict) -> str:
-    """Generate a pipeline report using an LLM."""
-    stats = _compute_report_stats(job_data)
+    has_vocals = bool(job_data.get("vocals_file"))
+    has_background = bool(job_data.get("background_file"))
 
-    lang_summary = ", ".join(f"{l['name']} ({l['percentage']}%)" for l in stats["detected_langs"][:5])
-    prompt_stats = f"""Target Language: {stats['target_language']}
-Audio Duration: {stats['duration_min']} minutes
-Total Segments: {stats['total_segments']}
-Segments Translated: {stats['translated_count']} ({stats['translation_pct']}%)
-Segments Untranslated: {len(stats['untranslated'])} ({round(100 - stats['translation_pct'], 1)}%)
-Speakers: {len(stats['voice_map'])}
-Detected Languages: {lang_summary}
+    # --- Build the report as bullet points ---
+    lines = []
 
-Untranslated Segments (original text returned unchanged):
-"""
-    for u in stats["untranslated"][:15]:
-        prompt_stats += f"  - Seg {u['index']} [{u['language']}]: \"{u['text']}\"\n"
-    if not stats["untranslated"]:
-        prompt_stats += "  None — all segments were translated successfully.\n"
+    lines.append("## Summary")
+    lines.append(f"- Translated **{duration_min} minutes** of audio into **{target_name}**")
+    lines.append(f"- **{translated_count}** of **{total_segments}** segments translated ({translation_pct}%)")
+    lines.append(f"- **{num_speakers}** speaker{'s' if num_speakers != 1 else ''} detected and voice-cloned: {speaker_names}")
 
-    return _llm_complete(
-        REPORT_SYSTEM_PROMPT,
-        f"Please write a report for this completed translation job:\n\n{prompt_stats}",
-        max_tokens=2048,
-    )
+    # Source languages
+    if detected_langs:
+        lang_parts = [f"{l['name']} ({l['percentage']}%)" for l in detected_langs]
+        lines.append(f"- Source language{'s' if len(detected_langs) > 1 else ''} detected: {', '.join(lang_parts)}")
+
+    # Source separation
+    if has_vocals and has_background:
+        lines.append("- Source separation ran successfully — background music/SFX will be mixed into the final audio")
+    elif has_vocals:
+        lines.append("- Source separation produced a vocals track (no background track available)")
+    else:
+        lines.append("- Source separation was skipped — full audio used for transcription")
+
+    # Translation coverage
+    if len(untranslated) == 0:
+        lines.append("")
+        lines.append("## Translation Coverage")
+        lines.append("- All segments were translated successfully")
+    else:
+        lines.append("")
+        lines.append("## Untranslated Segments")
+        lines.append(f"- **{len(untranslated)}** segment{'s' if len(untranslated) != 1 else ''} came back unchanged (original text = translated text)")
+        # Group by detected language
+        by_lang: dict[str, int] = {}
+        for u in untranslated:
+            by_lang[u["language"]] = by_lang.get(u["language"], 0) + 1
+        for lang, count in sorted(by_lang.items(), key=lambda x: -x[1]):
+            lines.append(f"  - {count} segment{'s' if count != 1 else ''} in **{lang}**")
+        # Show a few examples
+        for u in untranslated[:5]:
+            lines.append(f"  - Segment {u['index']}: \"{u['text']}...\"")
+        if len(untranslated) > 5:
+            lines.append(f"  - ...and {len(untranslated) - 5} more")
+
+    # Voice cloning
+    lines.append("")
+    lines.append("## Voice Cloning")
+    if voice_map:
+        for speaker, voice_id in voice_map.items():
+            lines.append(f"- **{speaker}** — cloned (voice ID: {voice_id[:12]}...)")
+    else:
+        lines.append("- No speakers were cloned (voice map is empty)")
+
+    return "\n".join(lines)
