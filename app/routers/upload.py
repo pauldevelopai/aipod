@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings, BASE_DIR
 from app.database import get_db
-from app.models import Job
+from app.models import Job, User
+from app.auth import require_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -19,6 +20,7 @@ router = APIRouter()
 async def upload_file(
     file: UploadFile = File(...),
     target_language: str = Form(...),
+    user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
     if not file.filename or not file.filename.lower().endswith(".mp3"):
@@ -34,6 +36,7 @@ async def upload_file(
 
     job = Job(
         id=job_id,
+        user_id=user.id,
         status="pending",
         current_stage=0,
         stage_name="Queued",

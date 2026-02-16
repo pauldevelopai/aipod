@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.config import BASE_DIR, SUPPORTED_LANGUAGES
 from app.database import get_db
-from app.models import Job
+from app.models import Job, User
+from app.auth import require_user, get_user_job
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +18,8 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
 
 
 @router.get("/jobs/{job_id}/edit")
-async def edit_translation(job_id: str, request: Request, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+async def edit_translation(job_id: str, request: Request, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    job = get_user_job(job_id, user, db)
 
     if job.status != "awaiting_review":
         raise HTTPException(status_code=400, detail="Job is not ready for review")
@@ -30,6 +29,7 @@ async def edit_translation(job_id: str, request: Request, db: Session = Depends(
 
     return templates.TemplateResponse("editor.html", {
         "request": request,
+        "user": user,
         "job": job.to_dict(),
         "transcript": transcript,
         "translated": translated,
@@ -41,11 +41,10 @@ async def edit_translation(job_id: str, request: Request, db: Session = Depends(
 async def save_translation(
     job_id: str,
     edited_segments: str = Form(...),
+    user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = get_user_job(job_id, user, db)
 
     if job.status != "awaiting_review":
         raise HTTPException(status_code=400, detail="Job is not ready for review")

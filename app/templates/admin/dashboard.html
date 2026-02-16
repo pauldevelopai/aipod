@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard — AiPod{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <h1 class="text-2xl font-bold text-white mb-2">Admin Dashboard</h1>
+    <div class="flex gap-3 text-sm">
+        <a href="/admin" class="text-yellow-400 font-medium">Dashboard</a>
+        <a href="/admin/users" class="text-gray-400 hover:text-white transition">Users</a>
+        <a href="/admin/jobs" class="text-gray-400 hover:text-white transition">Jobs</a>
+        <a href="/admin/feedback" class="text-gray-400 hover:text-white transition">Feedback</a>
+    </div>
+</div>
+
+<!-- Stats Grid -->
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+    <div class="bg-gray-900 border border-gray-800 rounded p-4 text-center">
+        <div class="text-3xl font-bold text-white">{{ total_users }}</div>
+        <div class="text-sm text-gray-400">Users</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded p-4 text-center">
+        <div class="text-3xl font-bold text-white">{{ total_jobs }}</div>
+        <div class="text-sm text-gray-400">Total Jobs</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded p-4 text-center">
+        <div class="text-3xl font-bold text-green-400">{{ completed_jobs }}</div>
+        <div class="text-sm text-gray-400">Completed</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded p-4 text-center">
+        <div class="text-3xl font-bold text-red-400">{{ failed_jobs }}</div>
+        <div class="text-sm text-gray-400">Failed</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded p-4 text-center">
+        <div class="text-3xl font-bold text-blue-400">{{ total_feedback }}</div>
+        <div class="text-sm text-gray-400">Feedback</div>
+    </div>
+</div>
+
+<!-- Recent Feedback -->
+<div class="mb-8">
+    <h2 class="text-lg font-semibold text-white mb-3">Recent Feedback</h2>
+    {% if recent_feedback %}
+    <div class="space-y-2">
+        {% for fb in recent_feedback %}
+        <div class="bg-gray-900 border border-gray-800 rounded p-3 flex items-start gap-3">
+            <div class="flex-1">
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-sm text-gray-300 font-medium">{{ fb.user.email }}</span>
+                    {% if fb.rating %}
+                    <span class="text-yellow-400 text-xs">{% for i in range(fb.rating) %}&#9733;{% endfor %}</span>
+                    {% endif %}
+                </div>
+                <p class="text-sm text-gray-400">{{ fb.message[:200] }}</p>
+            </div>
+            <span class="text-xs text-gray-600 whitespace-nowrap">{{ fb.created_at.strftime('%d %b %H:%M') }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-gray-500 text-sm">No feedback yet.</p>
+    {% endif %}
+</div>
+
+<!-- Recent Jobs -->
+<div>
+    <h2 class="text-lg font-semibold text-white mb-3">Recent Jobs</h2>
+    {% if recent_jobs %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="text-left text-gray-400 border-b border-gray-800">
+                    <th class="pb-2 pr-4">ID</th>
+                    <th class="pb-2 pr-4">Status</th>
+                    <th class="pb-2 pr-4">Stage</th>
+                    <th class="pb-2">Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in recent_jobs %}
+                <tr class="border-b border-gray-800/50">
+                    <td class="py-2 pr-4">
+                        <a href="/jobs/{{ job.id }}" class="text-blue-400 hover:underline">{{ job.id[:8] }}...</a>
+                    </td>
+                    <td class="py-2 pr-4">
+                        <span class="px-2 py-0.5 rounded text-xs
+                            {% if job.status == 'completed' %}bg-green-900/50 text-green-400
+                            {% elif job.status == 'failed' %}bg-red-900/50 text-red-400
+                            {% elif job.status == 'processing' %}bg-blue-900/50 text-blue-400
+                            {% else %}bg-gray-800 text-gray-400{% endif %}">
+                            {{ job.status }}
+                        </span>
+                    </td>
+                    <td class="py-2 pr-4 text-gray-400">{{ job.stage_name }}</td>
+                    <td class="py-2 text-gray-500">{{ job.created_at.strftime('%d %b %H:%M') if job.created_at else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-gray-500 text-sm">No jobs yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

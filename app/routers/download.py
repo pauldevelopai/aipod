@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.config import BASE_DIR, SUPPORTED_LANGUAGES, LANGUAGE_GROUPS, get_language
 from app.database import get_db
-from app.models import Job
+from app.models import Job, User
+from app.auth import require_user, get_user_job
 
 
 def _md_to_html(text: str) -> str:
@@ -133,10 +134,8 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
 
 
 @router.get("/jobs/{job_id}/download")
-async def download_page(job_id: str, request: Request, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+async def download_page(job_id: str, request: Request, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    job = get_user_job(job_id, user, db)
 
     if job.status != "completed":
         raise HTTPException(status_code=400, detail="Job is not completed yet")
@@ -153,6 +152,7 @@ async def download_page(job_id: str, request: Request, db: Session = Depends(get
 
     return templates.TemplateResponse("download.html", {
         "request": request,
+        "user": user,
         "job": job.to_dict(),
         "languages": SUPPORTED_LANGUAGES,
         "language_groups": LANGUAGE_GROUPS,
@@ -164,10 +164,8 @@ async def download_page(job_id: str, request: Request, db: Session = Depends(get
 
 
 @router.get("/jobs/{job_id}/download/original")
-async def download_original(job_id: str, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+async def download_original(job_id: str, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    job = get_user_job(job_id, user, db)
 
     if not job.original_file:
         raise HTTPException(status_code=404, detail="Original file not available")
@@ -184,10 +182,8 @@ async def download_original(job_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/jobs/{job_id}/download/file")
-async def download_file(job_id: str, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+async def download_file(job_id: str, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    job = get_user_job(job_id, user, db)
 
     if job.status != "completed" or not job.output_file:
         raise HTTPException(status_code=400, detail="Output file not available")

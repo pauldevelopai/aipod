@@ -13,7 +13,19 @@
             <a href="/" class="text-xl font-bold text-white tracking-tight">
                 AiPod
             </a>
-            <span class="text-sm text-gray-400">Podcast Translation Pipeline</span>
+            <div class="flex items-center gap-4">
+                {% if user is defined and user %}
+                    <span class="text-sm text-gray-400">{{ user.display_name or user.email }}</span>
+                    <a href="/feedback" class="text-sm text-gray-300 hover:text-white transition">Feedback</a>
+                    {% if user.is_admin %}
+                    <a href="/admin" class="text-sm text-yellow-400 hover:text-yellow-300 transition">Admin</a>
+                    {% endif %}
+                    <a href="/logout" class="text-sm text-gray-400 hover:text-white transition">Logout</a>
+                {% else %}
+                    <a href="/login" class="text-sm text-gray-300 hover:text-white transition">Login</a>
+                    <a href="/register" class="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition">Register</a>
+                {% endif %}
+            </div>
         </div>
     </nav>
 

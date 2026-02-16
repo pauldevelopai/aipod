@@ -1,18 +1,52 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, String, Integer, Text, DateTime
+from sqlalchemy import Column, String, Integer, Text, DateTime, Boolean, ForeignKey
+from sqlalchemy.orm import relationship
 
 from app.database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+    display_name = Column(String, nullable=True)
+    is_admin = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_login_at = Column(DateTime, nullable=True)
+
+    jobs = relationship("Job", back_populates="user")
+    feedbacks = relationship("Feedback", back_populates="user")
+
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    message = Column(Text, nullable=False)
+    rating = Column(Integer, nullable=True)  # 1-5 optional
+    job_id = Column(String, ForeignKey("jobs.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User", back_populates="feedbacks")
+    job = relationship("Job")
 
 
 class Job(Base):
     __tablename__ = "jobs"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
     status = Column(String, nullable=False, default="pending")  # pending, processing, awaiting_review, completed, failed
     current_stage = Column(Integer, default=0)  # 1-6
     stage_name = Column(String, default="")
+
+    user = relationship("User", back_populates="jobs")
 
     source_language = Column(String, nullable=False, default="auto")  # "auto" = detect automatically
     target_language = Column(String, nullable=False)

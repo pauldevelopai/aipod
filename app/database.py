@@ -30,6 +30,7 @@ def get_db():
 def init_db():
     Base.metadata.create_all(bind=engine)
     _migrate_db()
+    _seed_admin()
 
 
 def _migrate_db():
@@ -57,7 +58,32 @@ def _migrate_db():
             cursor.execute("ALTER TABLE jobs ADD COLUMN vocals_file TEXT")
         if "background_file" not in existing_cols:
             cursor.execute("ALTER TABLE jobs ADD COLUMN background_file TEXT")
+        if "user_id" not in existing_cols:
+            cursor.execute("ALTER TABLE jobs ADD COLUMN user_id TEXT REFERENCES users(id)")
 
         conn.commit()
     finally:
         conn.close()
+
+
+def _seed_admin():
+    """Create default admin user on first run (idempotent)."""
+    from app.models import User
+    from app.config import settings
+    from passlib.hash import bcrypt
+
+    db = SessionLocal()
+    try:
+        existing = db.query(User).filter(User.email == settings.admin_email).first()
+        if not existing:
+            admin = User(
+                email=settings.admin_email,
+                password_hash=bcrypt.hash(settings.admin_password),
+                display_name="Admin",
+                is_admin=True,
+                is_active=True,
+            )
+            db.add(admin)
+            db.commit()
+    finally:
+        db.close()

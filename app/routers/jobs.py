@@ -10,7 +10,8 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.config import BASE_DIR, SUPPORTED_LANGUAGES, LANGUAGE_GROUPS, get_language
 from app.database import get_db
-from app.models import Job
+from app.models import Job, User
+from app.auth import require_user, get_user_job
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +31,14 @@ TOTAL_STAGES = 6
 
 
 @router.get("/jobs/{job_id}")
-async def job_status(job_id: str, request: Request, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+async def job_status(job_id: str, request: Request, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    job = get_user_job(job_id, user, db)
 
     detected_langs = json.loads(job.detected_languages_json) if job.detected_languages_json else []
 
     return templates.TemplateResponse("status.html", {
         "request": request,
+        "user": user,
         "job": job.to_dict(),
         "stage_names": STAGE_NAMES,
         "languages": SUPPORTED_LANGUAGES,
@@ -48,10 +48,8 @@ async def job_status(job_id: str, request: Request, db: Session = Depends(get_db
 
 
 @router.post("/jobs/{job_id}/retry")
-async def retry_job(job_id: str, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+async def retry_job(job_id: str, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    job = get_user_job(job_id, user, db)
 
     # Resume from the stage that failed
     resume_stage = job.current_stage or 1
@@ -72,7 +70,7 @@ async def retry_job(job_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/jobs/{job_id}/events")
-async def job_events(job_id: str, db: Session = Depends(get_db)):
+async def job_events(job_id: str, user: User = Depends(require_user), db: Session = Depends(get_db)):
     async def event_generator():
         while True:
             db_session = next(get_db())
@@ -107,12 +105,11 @@ async def job_events(job_id: str, db: Session = Depends(get_db)):
 async def retranslate_job(
     job_id: str,
     target_language: str = Form(...),
+    user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
     """Create a new job that reuses existing audio/transcript/voices but translates to a new language."""
-    original_job = db.query(Job).filter(Job.id == job_id).first()
-    if not original_job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    original_job = get_user_job(job_id, user, db)
     if original_job.status != "completed":
         raise HTTPException(status_code=400, detail="Can only re-translate completed jobs")
 
@@ -123,6 +120,7 @@ async def retranslate_job(
 
     # Create new job reusing stages 1-3 outputs and voice clones
     new_job = Job(
+        user_id=user.id,
         status="pending",
         current_stage=0,
         stage_name="Queued",

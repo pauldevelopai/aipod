@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     output_dir: str = "outputs"
     database_url: str = "sqlite:///data/aipod.db"
 
+    # Auth
+    admin_email: str = "admin@aipod.local"
+    admin_password: str = "changeme123"
+    session_cookie_name: str = "aipod_session"
+    session_max_age: int = 604800  # 7 days
+
     model_config = {"env_file": str(BASE_DIR / ".env"), "env_file_encoding": "utf-8"}
 
 
