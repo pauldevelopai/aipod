@@ -40,6 +40,48 @@
             <p class="text-gray-600 text-xs mt-1">Source language(s) will be detected automatically from the audio</p>
         </div>
 
+        <!-- Pipeline Stages -->
+        <div>
+            <label class="block text-sm font-medium text-gray-300 mb-2">Pipeline Stages</label>
+            <div class="space-y-2 bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="stage_1" value="1" checked class="rounded bg-gray-700 border-gray-600 text-blue-500 focus:ring-blue-500">
+                    <span class="text-sm text-gray-200">1. Audio Cleanup (Auphonic)</span>
+                    <span class="stage-estimate text-xs text-gray-500 ml-auto" data-stage="1"></span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="stage_2" value="2" checked class="rounded bg-gray-700 border-gray-600 text-blue-500 focus:ring-blue-500">
+                    <span class="text-sm text-gray-200">2. Source Separation</span>
+                    <span class="stage-estimate text-xs text-gray-500 ml-auto" data-stage="2"></span>
+                </label>
+                <label class="flex items-center gap-3 opacity-60">
+                    <input type="checkbox" value="3" checked disabled class="rounded bg-gray-700 border-gray-600 text-blue-500">
+                    <span class="text-sm text-gray-400">3. Transcription + Diarization</span>
+                    <span class="text-xs text-gray-600 ml-auto">Required</span>
+                    <span class="stage-estimate text-xs text-gray-500" data-stage="3"></span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="stage_4" value="4" checked class="rounded bg-gray-700 border-gray-600 text-blue-500 focus:ring-blue-500">
+                    <span class="text-sm text-gray-200">4. Translation</span>
+                    <span class="stage-estimate text-xs text-gray-500 ml-auto" data-stage="4"></span>
+                </label>
+                <label class="flex items-center gap-3 opacity-60">
+                    <input type="checkbox" value="5" checked disabled class="rounded bg-gray-700 border-gray-600 text-blue-500">
+                    <span class="text-sm text-gray-400">5. Voice Cloning</span>
+                    <span class="text-xs text-gray-600 ml-auto">Required</span>
+                    <span class="stage-estimate text-xs text-gray-500" data-stage="5"></span>
+                </label>
+                <label class="flex items-center gap-3 opacity-60">
+                    <input type="checkbox" value="6" checked disabled class="rounded bg-gray-700 border-gray-600 text-blue-500">
+                    <span class="text-sm text-gray-400">6. Speech Generation + Mix</span>
+                    <span class="text-xs text-gray-600 ml-auto">Required</span>
+                    <span class="stage-estimate text-xs text-gray-500" data-stage="6"></span>
+                </label>
+            </div>
+            <p class="text-gray-600 text-xs mt-1">Stages 3, 5, 6 are always enabled. Uncheck optional stages to skip them.</p>
+            <input type="hidden" name="stages" id="stages-input" value="1,2,3,4,5,6">
+        </div>
+
         <!-- Submit -->
         <button type="submit" id="submit-btn"
             class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -121,7 +163,51 @@
     const submitBtn = document.getElementById("submit-btn");
     const targetLang = document.getElementById("target_language");
 
+    const stagesInput = document.getElementById("stages-input");
     let selectedFile = null;
+
+    // Time estimation functions (based on audio duration in minutes)
+    const STAGE_ESTIMATES = {
+        1: function(mins) { return mins * 1.5 + 0.5; },
+        2: function(mins) { return mins * 0.7 + 1.0; },
+        3: function(mins) { return mins * 0.5 + 0.5; },
+        4: function(mins) { return 0.5 + mins * 0.1; },
+        5: function(mins) { return 0.5; },
+        6: function(mins) { return mins * 0.3 + 0.5; }
+    };
+
+    function formatEstimate(minutes) {
+        if (minutes < 1) return "~" + Math.round(minutes * 60) + "s";
+        if (minutes < 60) return "~" + Math.round(minutes) + "min";
+        var h = Math.floor(minutes / 60);
+        var m = Math.round(minutes % 60);
+        return "~" + h + "h " + m + "min";
+    }
+
+    function updateEstimates() {
+        if (!selectedFile) return;
+        // Estimate duration from file size: MP3 ~128kbps = ~1MB/min
+        var durationMins = selectedFile.size / (1024 * 1024);
+        document.querySelectorAll(".stage-estimate").forEach(function(el) {
+            var stage = parseInt(el.dataset.stage);
+            var est = STAGE_ESTIMATES[stage](durationMins);
+            el.textContent = formatEstimate(est);
+        });
+    }
+
+    function updateStagesInput() {
+        var stages = [3, 5, 6]; // Always included
+        if (document.querySelector('input[name="stage_1"]') && document.querySelector('input[name="stage_1"]').checked) stages.push(1);
+        if (document.querySelector('input[name="stage_2"]') && document.querySelector('input[name="stage_2"]').checked) stages.push(2);
+        if (document.querySelector('input[name="stage_4"]') && document.querySelector('input[name="stage_4"]').checked) stages.push(4);
+        stages.sort();
+        stagesInput.value = stages.join(",");
+    }
+
+    // Listen for stage checkbox changes
+    document.querySelectorAll('input[name^="stage_"]').forEach(function(cb) {
+        cb.addEventListener("change", updateStagesInput);
+    });
 
     function formatSize(bytes) {
         if (bytes < 1024) return bytes + " B";
@@ -145,6 +231,7 @@
         fileSize.textContent = formatSize(file.size);
         dropText.classList.add("hidden");
         fileInfo.classList.remove("hidden");
+        updateEstimates();
         checkReady();
     }
 

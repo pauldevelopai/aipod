@@ -53,7 +53,14 @@
         <div class="space-y-2 mt-6">
             {% for num, name in stage_names.items() %}
             {% if num > 0 %}
-            <div class="flex items-center gap-3 stage-item" data-stage="{{ num }}">
+            <div class="flex items-center gap-3 stage-item" data-stage="{{ num }}" data-enabled="{{ 'true' if num in enabled_stages else 'false' }}">
+                {% if num not in enabled_stages %}
+                <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-gray-800 text-gray-600 border border-gray-700">
+                    &mdash;
+                </div>
+                <span class="text-sm text-gray-600 line-through">{{ name }}</span>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-500 border border-gray-700">Skipped</span>
+                {% else %}
                 <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
                     {% if job.status == 'completed' %}bg-green-600 text-white
                     {% elif job.current_stage > num %}bg-green-600 text-white
@@ -65,6 +72,7 @@
                 <span class="text-sm {% if job.status == 'completed' %}text-gray-400{% elif job.current_stage == num %}text-white font-medium{% elif job.current_stage > num %}text-gray-400{% else %}text-gray-600{% endif %}">
                     {{ name }}
                 </span>
+                {% endif %}
             </div>
             {% endif %}
             {% endfor %}
@@ -148,6 +156,7 @@
 <script>
     const JOB_ID = "{{ job.id }}";
     const CURRENT_STATUS = "{{ job.status }}";
+    let ENABLED_STAGES = {{ enabled_stages | tojson }};
 </script>
 <script src="/static/js/status.js"></script>
 {% endblock %}

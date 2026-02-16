@@ -65,6 +65,10 @@ class Job(Base):
     output_file = Column(Text, nullable=True)
     report_json = Column(Text, nullable=True)  # JSON pipeline report
 
+    # Pipeline configuration
+    enabled_stages_json = Column(Text, default='[1,2,3,4,5,6]')  # JSON array of enabled stage numbers
+    audio_duration_seconds = Column(Integer, nullable=True)  # Detected from uploaded file
+
     # External IDs
     auphonic_production_id = Column(String, nullable=True)
     happyscribe_order_id = Column(String, nullable=True)
@@ -95,6 +99,8 @@ class Job(Base):
             "voice_map_json": self.voice_map_json,
             "output_file": self.output_file,
             "report_json": self.report_json,
+            "enabled_stages_json": self.enabled_stages_json,
+            "audio_duration_seconds": self.audio_duration_seconds,
             "error_message": self.error_message,
             "stage_log": self.stage_log,
             "created_at": self.created_at.isoformat() if self.created_at else None,

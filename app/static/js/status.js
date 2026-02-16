@@ -151,11 +151,36 @@ document.addEventListener("DOMContentLoaded", () => {
         const pct = data.status === "completed" ? 100 : Math.round((data.current_stage / 6) * 100);
         progressBar.style.width = pct + "%";
 
+        // Update enabled_stages from SSE
+        if (data.enabled_stages) {
+            ENABLED_STAGES = data.enabled_stages;
+        }
+
         // Update stage items
         document.querySelectorAll(".stage-item").forEach((item) => {
             const stage = parseInt(item.dataset.stage);
             const dot = item.querySelector("div");
-            const label = item.querySelector("span");
+            const spans = item.querySelectorAll("span");
+            const label = spans[0];
+
+            // Check if stage is disabled
+            if (ENABLED_STAGES.indexOf(stage) === -1) {
+                dot.className = "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-gray-800 text-gray-600 border border-gray-700";
+                dot.innerHTML = "&mdash;";
+                label.className = "text-sm text-gray-600 line-through";
+                // Add or keep "Skipped" badge
+                if (!item.querySelector(".skip-badge")) {
+                    const badge = document.createElement("span");
+                    badge.className = "skip-badge text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-500 border border-gray-700";
+                    badge.textContent = "Skipped";
+                    item.appendChild(badge);
+                }
+                return;
+            }
+
+            // Remove skip badge if stage is now enabled
+            const skipBadge = item.querySelector(".skip-badge");
+            if (skipBadge) skipBadge.remove();
 
             const isComplete = data.status === "completed";
 

@@ -35,6 +35,7 @@ async def job_status(job_id: str, request: Request, user: User = Depends(require
     job = get_user_job(job_id, user, db)
 
     detected_langs = json.loads(job.detected_languages_json) if job.detected_languages_json else []
+    enabled_stages = json.loads(job.enabled_stages_json) if job.enabled_stages_json else [1,2,3,4,5,6]
 
     return templates.TemplateResponse("status.html", {
         "request": request,
@@ -44,6 +45,7 @@ async def job_status(job_id: str, request: Request, user: User = Depends(require
         "languages": SUPPORTED_LANGUAGES,
         "language_groups": LANGUAGE_GROUPS,
         "detected_languages": detected_langs,
+        "enabled_stages": enabled_stages,
     })
 
 
@@ -86,6 +88,7 @@ async def job_events(job_id: str, user: User = Depends(require_user), db: Sessio
                     "stage_name": job.stage_name or STAGE_NAMES.get(job.current_stage, ""),
                     "error_message": job.error_message,
                     "detected_languages": json.loads(job.detected_languages_json) if job.detected_languages_json else None,
+                    "enabled_stages": json.loads(job.enabled_stages_json) if job.enabled_stages_json else [1,2,3,4,5,6],
                     "stage_log": json.loads(job.stage_log) if job.stage_log else [],
                     "updated_at": job.updated_at.isoformat() if job.updated_at else None,
                 }
@@ -118,6 +121,10 @@ async def retranslate_job(
     if not lang:
         raise HTTPException(status_code=400, detail="Unsupported language")
 
+    # Inherit parent's enabled stages but always enable 4, 5, 6
+    parent_stages = json.loads(original_job.enabled_stages_json) if original_job.enabled_stages_json else [1,2,3,4,5,6]
+    retranslate_stages = sorted(set(parent_stages) | {4, 5, 6})
+
     # Create new job reusing stages 1-3 outputs and voice clones
     new_job = Job(
         user_id=user.id,
@@ -134,6 +141,8 @@ async def retranslate_job(
         background_file=original_job.background_file,
         transcript_json=original_job.transcript_json,
         voice_map_json=original_job.voice_map_json,
+        enabled_stages_json=json.dumps(retranslate_stages),
+        audio_duration_seconds=original_job.audio_duration_seconds,
     )
     db.add(new_job)
     db.commit()

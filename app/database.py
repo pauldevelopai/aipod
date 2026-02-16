@@ -60,6 +60,10 @@ def _migrate_db():
             cursor.execute("ALTER TABLE jobs ADD COLUMN background_file TEXT")
         if "user_id" not in existing_cols:
             cursor.execute("ALTER TABLE jobs ADD COLUMN user_id TEXT REFERENCES users(id)")
+        if "enabled_stages_json" not in existing_cols:
+            cursor.execute("ALTER TABLE jobs ADD COLUMN enabled_stages_json TEXT DEFAULT '[1,2,3,4,5,6]'")
+        if "audio_duration_seconds" not in existing_cols:
+            cursor.execute("ALTER TABLE jobs ADD COLUMN audio_duration_seconds INTEGER")
 
         conn.commit()
     finally:

@@ -75,28 +75,39 @@ def run_pipeline(self, job_id: str, start_from: int = 1):
         _log_stage(job_id, f"Pipeline starting from stage {start_from}")
         job = _get_job(job_id)
 
+        # Load enabled stages
+        enabled_stages = json.loads(job.get("enabled_stages_json") or "[1,2,3,4,5,6]")
+
         if start_from <= 1:
-            cleaned = job.get("cleaned_file")
-            if cleaned and Path(cleaned).exists():
-                _log_stage(job_id, "Stage 1 skipped — cleaned audio already exists")
+            if 1 not in enabled_stages:
+                _log_stage(job_id, "Stage 1 skipped (disabled)")
+                _update_job(job_id, status="processing")
             else:
-                _update_job(job_id, status="processing", current_stage=1, stage_name="Audio Cleanup (Auphonic)")
-                _log_stage(job_id, "Stage 1: Uploading to Auphonic for audio cleanup...")
-                stage_1_audio_cleanup(job_id)
-                _log_stage(job_id, "Stage 1 complete — audio cleaned")
+                cleaned = job.get("cleaned_file")
+                if cleaned and Path(cleaned).exists():
+                    _log_stage(job_id, "Stage 1 skipped — cleaned audio already exists")
+                    _update_job(job_id, status="processing")
+                else:
+                    _update_job(job_id, status="processing", current_stage=1, stage_name="Audio Cleanup (Auphonic)")
+                    _log_stage(job_id, "Stage 1: Uploading to Auphonic for audio cleanup...")
+                    stage_1_audio_cleanup(job_id)
+                    _log_stage(job_id, "Stage 1 complete — audio cleaned")
         else:
             _update_job(job_id, status="processing")
 
         if start_from <= 2:
-            job = _get_job(job_id)
-            vocals = job.get("vocals_file")
-            if vocals and Path(vocals).exists():
-                _log_stage(job_id, "Stage 2 skipped — vocals/background already separated")
+            if 2 not in enabled_stages:
+                _log_stage(job_id, "Stage 2 skipped (disabled)")
             else:
-                _update_job(job_id, current_stage=2, stage_name="Source Separation")
-                _log_stage(job_id, "Stage 2: Separating vocals from music/SFX (MDX-NET ONNX, CPU)...")
-                stage_2_source_separation(job_id)
-                _log_stage(job_id, "Stage 2 complete — vocals and background tracks ready")
+                job = _get_job(job_id)
+                vocals = job.get("vocals_file")
+                if vocals and Path(vocals).exists():
+                    _log_stage(job_id, "Stage 2 skipped — vocals/background already separated")
+                else:
+                    _update_job(job_id, current_stage=2, stage_name="Source Separation")
+                    _log_stage(job_id, "Stage 2: Separating vocals from music/SFX (MDX-NET ONNX, CPU)...")
+                    stage_2_source_separation(job_id)
+                    _log_stage(job_id, "Stage 2 complete — vocals and background tracks ready")
 
         if start_from <= 3:
             job = _get_job(job_id)
@@ -114,15 +125,20 @@ def run_pipeline(self, job_id: str, start_from: int = 1):
                 _log_stage(job_id, "Stage 3 complete — transcript + languages ready")
 
         if start_from <= 4:
-            job = _get_job(job_id)
-            translated = job.get("translated_json")
-            if translated and json.loads(translated):
-                _log_stage(job_id, "Stage 4 skipped — translation already exists")
+            if 4 not in enabled_stages:
+                _log_stage(job_id, "Stage 4 skipped (disabled) — using original text")
+                job = _get_job(job_id)
+                _update_job(job_id, translated_json=job.get("transcript_json"))
             else:
-                _update_job(job_id, current_stage=4, stage_name="Translation (Google + Claude)")
-                _log_stage(job_id, "Stage 4: Translating with Google Translate + Claude polish...")
-                stage_4_translation(job_id)
-                _log_stage(job_id, "Stage 4 complete — translation polished")
+                job = _get_job(job_id)
+                translated = job.get("translated_json")
+                if translated and json.loads(translated):
+                    _log_stage(job_id, "Stage 4 skipped — translation already exists")
+                else:
+                    _update_job(job_id, current_stage=4, stage_name="Translation (Google + Claude)")
+                    _log_stage(job_id, "Stage 4: Translating with Google Translate + Claude polish...")
+                    stage_4_translation(job_id)
+                    _log_stage(job_id, "Stage 4 complete — translation polished")
 
         # Use translated_json as edited_json (no human review step)
         job = _get_job(job_id)
@@ -192,7 +208,7 @@ def stage_2_source_separation(job_id: str):
     from app.services.separation import separate
 
     job = _get_job(job_id)
-    cleaned_file = job["cleaned_file"]
+    cleaned_file = job.get("cleaned_file") or job["original_file"]
     separation_dir = str(BASE_DIR / settings.output_dir / job_id / "separation")
 
     _log_stage(job_id, "Running MDX-NET ONNX source separation (this may take a few minutes)...")
@@ -229,7 +245,7 @@ def stage_3_transcription(job_id: str):
     from app.services.diarize import diarize
 
     job = _get_job(job_id)
-    audio_file = job.get("vocals_file") or job["cleaned_file"]
+    audio_file = job.get("vocals_file") or job.get("cleaned_file") or job["original_file"]
 
     _log_stage(job_id, "Running pyannote speaker diarization...")
     diarization_segments = diarize(audio_file)
