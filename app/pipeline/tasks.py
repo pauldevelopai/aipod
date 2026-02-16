@@ -4,6 +4,8 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from celery.exceptions import SoftTimeLimitExceeded
+
 from app.pipeline.worker import celery_app
 from app.config import settings, get_language, BASE_DIR
 from app.database import SessionLocal
@@ -152,6 +154,10 @@ def run_pipeline(self, job_id: str, start_from: int = 1):
         _update_job(job_id, status="completed", stage_name="Complete")
         _log_stage(job_id, "Pipeline completed successfully")
 
+    except SoftTimeLimitExceeded:
+        logger.warning(f"Pipeline timed out for job {job_id}")
+        _log_stage(job_id, "FAILED: Task exceeded time limit — please retry")
+        _update_job(job_id, status="failed", error_message="Task exceeded time limit — please retry")
     except Exception as e:
         logger.exception(f"Pipeline failed for job {job_id}")
         _log_stage(job_id, f"FAILED: {e}")
