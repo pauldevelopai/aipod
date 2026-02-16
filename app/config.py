@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     output_dir: str = "outputs"
     database_url: str = "sqlite:///data/aipod.db"
 
+    # Whisper
+    whisper_model: str = "large-v3"  # Options: tiny, base, small, medium, large-v3
+
     # Auth
     admin_email: str = "admin@aipod.local"
     admin_password: str = "changeme123"

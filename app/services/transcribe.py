@@ -2,18 +2,32 @@ import logging
 
 from faster_whisper import WhisperModel
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 _model = None
+
+# Model RAM requirements (approximate, int8):
+# tiny: ~75MB  | base: ~150MB | small: ~500MB | medium: ~1.5GB | large-v3: ~3GB
+_MODEL_SIZES = {
+    "tiny": "~75MB RAM",
+    "base": "~150MB RAM",
+    "small": "~500MB RAM",
+    "medium": "~1.5GB RAM",
+    "large-v3": "~3GB RAM",
+}
 
 
 def _get_model() -> WhisperModel:
     """Lazy-load the Whisper model (downloaded on first use)."""
     global _model
     if _model is None:
-        logger.info("Loading Whisper model (large-v3) — first run downloads ~3GB")
-        _model = WhisperModel("large-v3", device="cpu", compute_type="int8")
-        logger.info("Whisper model loaded")
+        model_name = settings.whisper_model
+        size_info = _MODEL_SIZES.get(model_name, "unknown size")
+        logger.info(f"Loading Whisper model ({model_name}, {size_info}) — first run downloads the model")
+        _model = WhisperModel(model_name, device="cpu", compute_type="int8")
+        logger.info(f"Whisper model ({model_name}) loaded")
     return _model
 
 
