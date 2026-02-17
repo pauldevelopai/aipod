@@ -22,12 +22,13 @@ STAGE_NAMES = {
     0: "Queued",
     1: "Audio Cleanup (Auphonic)",
     2: "Source Separation",
-    3: "Transcription + Diarization (Whisper + pyannote)",
-    4: "Translation (Google + Claude)",
-    5: "Voice Cloning (ElevenLabs)",
-    6: "Speech Generation + Mix (ElevenLabs TTS)",
+    3: "Speaker Diarization (pyannote)",
+    4: "Transcription (Whisper)",
+    5: "Translation (Google + Claude)",
+    6: "Voice Cloning (ElevenLabs)",
+    7: "Speech Generation + Mix (ElevenLabs TTS)",
 }
-TOTAL_STAGES = 6
+TOTAL_STAGES = 7
 
 
 @router.get("/jobs/{job_id}")
@@ -35,7 +36,7 @@ async def job_status(job_id: str, request: Request, user: User = Depends(require
     job = get_user_job(job_id, user, db)
 
     detected_langs = json.loads(job.detected_languages_json) if job.detected_languages_json else []
-    enabled_stages = json.loads(job.enabled_stages_json) if job.enabled_stages_json else [1,2,3,4,5,6]
+    enabled_stages = json.loads(job.enabled_stages_json) if job.enabled_stages_json else [1,2,3,4,5,6,7]
 
     return templates.TemplateResponse("status.html", {
         "request": request,
@@ -88,7 +89,7 @@ async def job_events(job_id: str, user: User = Depends(require_user), db: Sessio
                     "stage_name": job.stage_name or STAGE_NAMES.get(job.current_stage, ""),
                     "error_message": job.error_message,
                     "detected_languages": json.loads(job.detected_languages_json) if job.detected_languages_json else None,
-                    "enabled_stages": json.loads(job.enabled_stages_json) if job.enabled_stages_json else [1,2,3,4,5,6],
+                    "enabled_stages": json.loads(job.enabled_stages_json) if job.enabled_stages_json else [1,2,3,4,5,6,7],
                     "stage_log": json.loads(job.stage_log) if job.stage_log else [],
                     "updated_at": job.updated_at.isoformat() if job.updated_at else None,
                 }
@@ -122,8 +123,8 @@ async def retranslate_job(
         raise HTTPException(status_code=400, detail="Unsupported language")
 
     # Inherit parent's enabled stages but always enable 4, 5, 6
-    parent_stages = json.loads(original_job.enabled_stages_json) if original_job.enabled_stages_json else [1,2,3,4,5,6]
-    retranslate_stages = sorted(set(parent_stages) | {4, 5, 6})
+    parent_stages = json.loads(original_job.enabled_stages_json) if original_job.enabled_stages_json else [1,2,3,4,5,6,7]
+    retranslate_stages = sorted(set(parent_stages) | {5, 6, 7})
 
     # Create new job reusing stages 1-3 outputs and voice clones
     new_job = Job(
@@ -152,7 +153,7 @@ async def retranslate_job(
     # stage 5 skipped (voice_map_json exists)
     try:
         from app.pipeline.tasks import run_pipeline
-        run_pipeline.delay(new_job.id, start_from=4)
+        run_pipeline.delay(new_job.id, start_from=5)
     except Exception as e:
         logger.warning(f"Could not dispatch retranslate job {new_job.id}: {e}")
         new_job.stage_name = "Queued (waiting for worker)"

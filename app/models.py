@@ -66,7 +66,7 @@ class Job(Base):
     report_json = Column(Text, nullable=True)  # JSON pipeline report
 
     # Pipeline configuration
-    enabled_stages_json = Column(Text, default='[1,2,3,4,5,6]')  # JSON array of enabled stage numbers
+    enabled_stages_json = Column(Text, default='[1,2,3,4,5,6,7]')  # JSON array of enabled stage numbers
     audio_duration_seconds = Column(Integer, nullable=True)  # Detected from uploaded file
 
     # External IDs

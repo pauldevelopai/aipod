@@ -16,14 +16,14 @@ from app.auth import require_user
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-REQUIRED_STAGES = {3, 5, 6}
+REQUIRED_STAGES = {4, 6, 7}
 
 
 @router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
     target_language: str = Form(...),
-    stages: str = Form("1,2,3,4,5,6"),
+    stages: str = Form("1,2,3,4,5,6,7"),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
@@ -37,9 +37,9 @@ async def upload_file(
         raise HTTPException(status_code=400, detail="Invalid stages format")
 
     if not REQUIRED_STAGES.issubset(enabled_stages):
-        raise HTTPException(status_code=400, detail="Stages 3, 5, and 6 are required")
-    if any(s < 1 or s > 6 for s in enabled_stages):
-        raise HTTPException(status_code=400, detail="Stage numbers must be 1-6")
+        raise HTTPException(status_code=400, detail="Stages 4, 6, and 7 are required")
+    if any(s < 1 or s > 7 for s in enabled_stages):
+        raise HTTPException(status_code=400, detail="Stage numbers must be 1-7")
 
     job_id = str(uuid.uuid4())
     upload_dir = BASE_DIR / settings.upload_dir / job_id

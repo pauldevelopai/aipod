@@ -61,7 +61,10 @@ def _migrate_db():
         if "user_id" not in existing_cols:
             cursor.execute("ALTER TABLE jobs ADD COLUMN user_id TEXT REFERENCES users(id)")
         if "enabled_stages_json" not in existing_cols:
-            cursor.execute("ALTER TABLE jobs ADD COLUMN enabled_stages_json TEXT DEFAULT '[1,2,3,4,5,6]'")
+            cursor.execute("ALTER TABLE jobs ADD COLUMN enabled_stages_json TEXT DEFAULT '[1,2,3,4,5,6,7]'")
+        else:
+            # Migrate old 6-stage jobs to 7-stage format
+            cursor.execute("UPDATE jobs SET enabled_stages_json = '[1,2,3,4,5,6,7]' WHERE enabled_stages_json = '[1,2,3,4,5,6]'")
         if "audio_duration_seconds" not in existing_cols:
             cursor.execute("ALTER TABLE jobs ADD COLUMN audio_duration_seconds INTEGER")
 

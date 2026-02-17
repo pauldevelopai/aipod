@@ -145,10 +145,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Update stage info
         stageLabel.textContent = data.stage_name || "Processing...";
-        stageCounter.textContent = data.status === "completed" ? "6/6" : `${data.current_stage}/6`;
+        stageCounter.textContent = data.status === "completed" ? "7/7" : `${data.current_stage}/7`;
 
         // Update progress bar
-        const pct = data.status === "completed" ? 100 : Math.round((data.current_stage / 6) * 100);
+        const pct = data.status === "completed" ? 100 : Math.round((data.current_stage / 7) * 100);
         progressBar.style.width = pct + "%";
 
         // Update enabled_stages from SSE

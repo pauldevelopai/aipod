@@ -23,7 +23,7 @@
                     <span id="stage-label">{{ job.stage_name or 'Queued' }}</span>
                     <span id="elapsed-timer" class="text-xs text-gray-500 font-mono {% if job.status not in ('processing',) %}hidden{% endif %}"></span>
                 </span>
-                <span id="stage-counter">{% if job.status == 'completed' %}6/6{% else %}{{ job.current_stage }}/6{% endif %}</span>
+                <span id="stage-counter">{% if job.status == 'completed' %}7/7{% else %}{{ job.current_stage }}/7{% endif %}</span>
             </div>
             <div class="w-full bg-gray-800 rounded-full h-3">
                 <div id="progress-bar" class="h-3 rounded-full transition-all duration-500
@@ -31,7 +31,7 @@
                     {% elif job.status == 'failed' %}bg-red-500
                     {% elif job.status == 'awaiting_review' %}bg-yellow-500
                     {% else %}bg-blue-500{% endif %}"
-                    style="width: {% if job.status == 'completed' %}100{% else %}{{ (job.current_stage / 6 * 100) | int }}{% endif %}%">
+                    style="width: {% if job.status == 'completed' %}100{% else %}{{ (job.current_stage / 7 * 100) | int }}{% endif %}%">
                 </div>
             </div>
         </div>

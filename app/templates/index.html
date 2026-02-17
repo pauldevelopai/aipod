@@ -54,32 +54,38 @@
                     <span class="text-sm text-gray-200">2. Source Separation</span>
                     <span class="stage-estimate text-xs text-gray-500 ml-auto" data-stage="2"></span>
                 </label>
-                <label class="flex items-center gap-3 opacity-60">
-                    <input type="checkbox" value="3" checked disabled class="rounded bg-gray-700 border-gray-600 text-blue-500">
-                    <span class="text-sm text-gray-400">3. Transcription + Diarization</span>
-                    <span class="text-xs text-gray-600 ml-auto">Required</span>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="stage_3" value="3" checked class="rounded bg-gray-700 border-gray-600 text-blue-500 focus:ring-blue-500">
+                    <span class="text-sm text-gray-200">3. Speaker Diarization</span>
+                    <span class="text-xs text-gray-500 ml-auto">Uncheck for single-speaker audio</span>
                     <span class="stage-estimate text-xs text-gray-500" data-stage="3"></span>
                 </label>
-                <label class="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" name="stage_4" value="4" checked class="rounded bg-gray-700 border-gray-600 text-blue-500 focus:ring-blue-500">
-                    <span class="text-sm text-gray-200">4. Translation</span>
-                    <span class="stage-estimate text-xs text-gray-500 ml-auto" data-stage="4"></span>
-                </label>
                 <label class="flex items-center gap-3 opacity-60">
-                    <input type="checkbox" value="5" checked disabled class="rounded bg-gray-700 border-gray-600 text-blue-500">
-                    <span class="text-sm text-gray-400">5. Voice Cloning</span>
+                    <input type="checkbox" value="4" checked disabled class="rounded bg-gray-700 border-gray-600 text-blue-500">
+                    <span class="text-sm text-gray-400">4. Transcription (Whisper)</span>
                     <span class="text-xs text-gray-600 ml-auto">Required</span>
-                    <span class="stage-estimate text-xs text-gray-500" data-stage="5"></span>
+                    <span class="stage-estimate text-xs text-gray-500" data-stage="4"></span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="stage_5" value="5" checked class="rounded bg-gray-700 border-gray-600 text-blue-500 focus:ring-blue-500">
+                    <span class="text-sm text-gray-200">5. Translation</span>
+                    <span class="stage-estimate text-xs text-gray-500 ml-auto" data-stage="5"></span>
                 </label>
                 <label class="flex items-center gap-3 opacity-60">
                     <input type="checkbox" value="6" checked disabled class="rounded bg-gray-700 border-gray-600 text-blue-500">
-                    <span class="text-sm text-gray-400">6. Speech Generation + Mix</span>
+                    <span class="text-sm text-gray-400">6. Voice Cloning</span>
                     <span class="text-xs text-gray-600 ml-auto">Required</span>
                     <span class="stage-estimate text-xs text-gray-500" data-stage="6"></span>
                 </label>
+                <label class="flex items-center gap-3 opacity-60">
+                    <input type="checkbox" value="7" checked disabled class="rounded bg-gray-700 border-gray-600 text-blue-500">
+                    <span class="text-sm text-gray-400">7. Speech Generation + Mix</span>
+                    <span class="text-xs text-gray-600 ml-auto">Required</span>
+                    <span class="stage-estimate text-xs text-gray-500" data-stage="7"></span>
+                </label>
             </div>
-            <p class="text-gray-600 text-xs mt-1">Stages 3, 5, 6 are always enabled. Uncheck optional stages to skip them.</p>
-            <input type="hidden" name="stages" id="stages-input" value="1,2,3,4,5,6">
+            <p class="text-gray-600 text-xs mt-1">Stages 4, 6, 7 are always enabled. Uncheck optional stages to skip them.</p>
+            <input type="hidden" name="stages" id="stages-input" value="1,2,3,4,5,6,7">
         </div>
 
         <!-- Submit -->
@@ -170,10 +176,11 @@
     const STAGE_ESTIMATES = {
         1: function(mins) { return mins * 1.5 + 0.5; },
         2: function(mins) { return mins * 0.7 + 1.0; },
-        3: function(mins) { return mins * 0.5 + 0.5; },
-        4: function(mins) { return 0.5 + mins * 0.1; },
-        5: function(mins) { return 0.5; },
-        6: function(mins) { return mins * 0.3 + 0.5; }
+        3: function(mins) { return mins * 0.3 + 0.5; },
+        4: function(mins) { return mins * 0.5 + 0.5; },
+        5: function(mins) { return 0.5 + mins * 0.1; },
+        6: function(mins) { return 0.5; },
+        7: function(mins) { return mins * 0.3 + 0.5; }
     };
 
     function formatEstimate(minutes) {
@@ -196,10 +203,11 @@
     }
 
     function updateStagesInput() {
-        var stages = [3, 5, 6]; // Always included
+        var stages = [4, 6, 7]; // Always included
         if (document.querySelector('input[name="stage_1"]') && document.querySelector('input[name="stage_1"]').checked) stages.push(1);
         if (document.querySelector('input[name="stage_2"]') && document.querySelector('input[name="stage_2"]').checked) stages.push(2);
-        if (document.querySelector('input[name="stage_4"]') && document.querySelector('input[name="stage_4"]').checked) stages.push(4);
+        if (document.querySelector('input[name="stage_3"]') && document.querySelector('input[name="stage_3"]').checked) stages.push(3);
+        if (document.querySelector('input[name="stage_5"]') && document.querySelector('input[name="stage_5"]').checked) stages.push(5);
         stages.sort();
         stagesInput.value = stages.join(",");
     }

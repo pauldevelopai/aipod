@@ -92,7 +92,7 @@ def _log_stage(job_id: str, message: str):
 
 @celery_app.task(bind=True, name="aipod.run_pipeline")
 def run_pipeline(self, job_id: str, start_from: int = 1):
-    """Run pipeline stages 1-6.
+    """Run pipeline stages 1-7.
     start_from allows resuming from a specific stage."""
     try:
         # Clear any stale error and log from previous run
@@ -101,8 +101,9 @@ def run_pipeline(self, job_id: str, start_from: int = 1):
         job = _get_job(job_id)
 
         # Load enabled stages
-        enabled_stages = json.loads(job.get("enabled_stages_json") or "[1,2,3,4,5,6]")
+        enabled_stages = json.loads(job.get("enabled_stages_json") or "[1,2,3,4,5,6,7]")
 
+        # --- Stage 1: Audio Cleanup (optional) ---
         if start_from <= 1:
             if 1 not in enabled_stages:
                 _log_stage(job_id, "Stage 1 skipped (disabled)")
@@ -120,6 +121,7 @@ def run_pipeline(self, job_id: str, start_from: int = 1):
         else:
             _update_job(job_id, status="processing")
 
+        # --- Stage 2: Source Separation (optional) ---
         if start_from <= 2:
             if 2 not in enabled_stages:
                 _log_stage(job_id, "Stage 2 skipped (disabled)")
@@ -134,58 +136,77 @@ def run_pipeline(self, job_id: str, start_from: int = 1):
                     stage_2_source_separation(job_id)
                     _log_stage(job_id, "Stage 2 complete — vocals and background tracks ready")
 
+        # --- Stage 3: Speaker Diarization (optional) ---
+        diarization_segments = None
         if start_from <= 3:
+            if 3 not in enabled_stages:
+                _log_stage(job_id, "Stage 3 skipped (disabled) — single speaker assumed")
+            else:
+                _update_job(job_id, current_stage=3, stage_name="Speaker Diarization (pyannote)")
+                _log_stage(job_id, "Stage 3: Running speaker diarization...")
+                diarization_segments = stage_3_diarization(job_id)
+                if diarization_segments:
+                    speakers = set(s.get("speaker") for s in diarization_segments)
+                    _log_stage(job_id, f"Stage 3 complete — {len(speakers)} speakers, {len(diarization_segments)} segments")
+                else:
+                    _log_stage(job_id, "Stage 3 complete — pyannote unavailable, will use gap-based detection")
+
+        # --- Stage 4: Transcription (required) ---
+        if start_from <= 4:
             job = _get_job(job_id)
             transcript = job.get("transcript_json")
             if transcript and json.loads(transcript):
-                _log_stage(job_id, "Stage 3 skipped — transcript already exists")
+                _log_stage(job_id, "Stage 4 skipped — transcript already exists")
             else:
-                _update_job(job_id, current_stage=3, stage_name="Transcription + Diarization (Whisper + pyannote)")
-                _log_stage(job_id, "Stage 3: Running speaker diarization + Whisper transcription...")
-                stage_3_transcription(job_id)
+                _update_job(job_id, current_stage=4, stage_name="Transcription (Whisper)")
+                _log_stage(job_id, "Stage 4: Running Whisper transcription...")
+                stage_4_transcription(job_id, diarization_segments)
 
-                _update_job(job_id, current_stage=3, stage_name="Detecting Languages")
-                _log_stage(job_id, "Stage 3b: Detecting languages in transcript segments...")
-                stage_3b_language_detection(job_id)
-                _log_stage(job_id, "Stage 3 complete — transcript + languages ready")
+                _update_job(job_id, current_stage=4, stage_name="Detecting Languages")
+                _log_stage(job_id, "Stage 4b: Detecting languages in transcript segments...")
+                stage_4b_language_detection(job_id)
+                _log_stage(job_id, "Stage 4 complete — transcript + languages ready")
 
-        if start_from <= 4:
-            if 4 not in enabled_stages:
-                _log_stage(job_id, "Stage 4 skipped (disabled) — using original text")
+        # --- Stage 5: Translation (optional) ---
+        if start_from <= 5:
+            if 5 not in enabled_stages:
+                _log_stage(job_id, "Stage 5 skipped (disabled) — using original text")
                 job = _get_job(job_id)
                 _update_job(job_id, translated_json=job.get("transcript_json"))
             else:
                 job = _get_job(job_id)
                 translated = job.get("translated_json")
                 if translated and json.loads(translated):
-                    _log_stage(job_id, "Stage 4 skipped — translation already exists")
+                    _log_stage(job_id, "Stage 5 skipped — translation already exists")
                 else:
-                    _update_job(job_id, current_stage=4, stage_name="Translation (Google + Claude)")
-                    _log_stage(job_id, "Stage 4: Translating with Google Translate + Claude polish...")
-                    stage_4_translation(job_id)
-                    _log_stage(job_id, "Stage 4 complete — translation polished")
+                    _update_job(job_id, current_stage=5, stage_name="Translation (Google + Claude)")
+                    _log_stage(job_id, "Stage 5: Translating with Google Translate + Claude polish...")
+                    stage_5_translation(job_id)
+                    _log_stage(job_id, "Stage 5 complete — translation polished")
 
         # Use translated_json as edited_json (no human review step)
         job = _get_job(job_id)
         if not job.get("edited_json"):
             _update_job(job_id, edited_json=job.get("translated_json"))
 
-        if start_from <= 5:
+        # --- Stage 6: Voice Cloning (required) ---
+        if start_from <= 6:
             job = _get_job(job_id)
             voice_map = job.get("voice_map_json")
             if voice_map and json.loads(voice_map):
-                _log_stage(job_id, "Stage 5 skipped — voice clones already cached")
+                _log_stage(job_id, "Stage 6 skipped — voice clones already cached")
             else:
-                _update_job(job_id, current_stage=5, stage_name="Voice Cloning (ElevenLabs)")
-                _log_stage(job_id, "Stage 5: Extracting speaker samples and cloning voices...")
-                stage_5_voice_cloning(job_id)
-                _log_stage(job_id, "Stage 5 complete — voices cloned")
+                _update_job(job_id, current_stage=6, stage_name="Voice Cloning (ElevenLabs)")
+                _log_stage(job_id, "Stage 6: Extracting speaker samples and cloning voices...")
+                stage_6_voice_cloning(job_id)
+                _log_stage(job_id, "Stage 6 complete — voices cloned")
 
-        if start_from <= 6:
-            _update_job(job_id, current_stage=6, stage_name="Speech Generation + Mix (ElevenLabs TTS)")
-            _log_stage(job_id, "Stage 6: Generating speech for each segment...")
-            stage_6_speech_generation(job_id)
-            _log_stage(job_id, "Stage 6 complete — final audio mixed")
+        # --- Stage 7: Speech Generation + Mix (required) ---
+        if start_from <= 7:
+            _update_job(job_id, current_stage=7, stage_name="Speech Generation + Mix (ElevenLabs TTS)")
+            _log_stage(job_id, "Stage 7: Generating speech for each segment...")
+            stage_7_speech_generation(job_id)
+            _log_stage(job_id, "Stage 7 complete — final audio mixed")
 
         # Generate pipeline report
         _update_job(job_id, stage_name="Generating Report")
@@ -208,8 +229,8 @@ def run_pipeline(self, job_id: str, start_from: int = 1):
 
 @celery_app.task(bind=True, name="aipod.resume_pipeline")
 def resume_pipeline(self, job_id: str):
-    """Resume the pipeline from stage 6 (after editor review)."""
-    run_pipeline(job_id, start_from=6)
+    """Resume the pipeline from stage 7 (after editor review)."""
+    run_pipeline(job_id, start_from=7)
 
 
 def stage_1_audio_cleanup(job_id: str):
@@ -250,9 +271,8 @@ def stage_2_source_separation(job_id: str):
     _log_stage(job_id, f"Separation done: vocals={vocals_exists}, background={bg_exists}")
 
 
-def stage_3_transcription(job_id: str):
-    """Stage 3: Transcribe audio using Whisper + pyannote diarization."""
-    from app.services.transcribe import transcribe
+def stage_3_diarization(job_id: str) -> list[dict] | None:
+    """Stage 3: Run speaker diarization using pyannote."""
     from app.services.diarize import diarize
 
     job = _get_job(job_id)
@@ -261,11 +281,15 @@ def stage_3_transcription(job_id: str):
     _log_stage(job_id, "Running pyannote speaker diarization...")
     with _heartbeat(job_id, "Diarization"):
         diarization_segments = diarize(audio_file)
-    if diarization_segments:
-        speakers = set(s.get("speaker") for s in diarization_segments)
-        _log_stage(job_id, f"Diarization found {len(speakers)} speakers, {len(diarization_segments)} segments")
-    else:
-        _log_stage(job_id, "pyannote unavailable, will use gap-based speaker detection")
+    return diarization_segments
+
+
+def stage_4_transcription(job_id: str, diarization_segments: list[dict] | None = None):
+    """Stage 4: Transcribe audio using Whisper."""
+    from app.services.transcribe import transcribe
+
+    job = _get_job(job_id)
+    audio_file = job.get("vocals_file") or job.get("cleaned_file") or job["original_file"]
 
     _log_stage(job_id, "Running Whisper transcription...")
     with _heartbeat(job_id, "Whisper transcription"):
@@ -273,11 +297,11 @@ def stage_3_transcription(job_id: str):
 
     _update_job(job_id, transcript_json=json.dumps(segments))
     method = "pyannote" if diarization_segments else "gap-based"
-    _log_stage(job_id, f"Transcribed {len(segments)} segments ({method} diarization)")
+    _log_stage(job_id, f"Transcribed {len(segments)} segments ({method} speaker detection)")
 
 
-def stage_3b_language_detection(job_id: str):
-    """Stage 3b: Detect language for each transcript segment."""
+def stage_4b_language_detection(job_id: str):
+    """Stage 4b: Detect language for each transcript segment."""
     from app.services.language import detect_segments_languages, summarize_detected_languages
 
     job = _get_job(job_id)
@@ -296,8 +320,8 @@ def stage_3b_language_detection(job_id: str):
     )
 
 
-def stage_4_translation(job_id: str):
-    """Stage 4: Translate using Google Translate (per-segment source lang) + Claude polish."""
+def stage_5_translation(job_id: str):
+    """Stage 5: Translate using Google Translate (per-segment source lang) + Claude polish."""
     from app.services import deepl, claude
 
     job = _get_job(job_id)
@@ -317,8 +341,8 @@ def stage_4_translation(job_id: str):
     _log_stage(job_id, f"Translation complete: {len(polished)} segments → {target_name}")
 
 
-def stage_5_voice_cloning(job_id: str):
-    """Stage 5: Clone voices for each speaker using ElevenLabs.
+def stage_6_voice_cloning(job_id: str):
+    """Stage 6: Clone voices for each speaker using ElevenLabs.
     Uses fingerprint cache to reuse voices for recurring speakers."""
     from app.services import elevenlabs, audio
     from app.services import fingerprint
@@ -359,8 +383,8 @@ def stage_5_voice_cloning(job_id: str):
     _log_stage(job_id, f"Voice cloning complete: {len(voice_map)} voices ready")
 
 
-def stage_6_speech_generation(job_id: str):
-    """Stage 6: Generate TTS for each segment, stitch, and smart-mix with background."""
+def stage_7_speech_generation(job_id: str):
+    """Stage 7: Generate TTS for each segment, stitch, and smart-mix with background."""
     from app.services import elevenlabs, audio as audio_service
 
     job = _get_job(job_id)
