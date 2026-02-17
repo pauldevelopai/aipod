@@ -22,7 +22,7 @@ STAGE_NAMES = {
     0: "Queued",
     1: "Audio Cleanup (Auphonic)",
     2: "Source Separation",
-    3: "Speaker Diarization (pyannote)",
+    3: "Speaker Detection",
     4: "Transcription (Whisper)",
     5: "Translation (Google + Claude)",
     6: "Voice Cloning (ElevenLabs)",

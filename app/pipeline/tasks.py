@@ -142,7 +142,7 @@ def run_pipeline(self, job_id: str, start_from: int = 1):
             if 3 not in enabled_stages:
                 _log_stage(job_id, "Stage 3 skipped (disabled) — single speaker assumed")
             else:
-                _update_job(job_id, current_stage=3, stage_name="Speaker Diarization (pyannote)")
+                _update_job(job_id, current_stage=3, stage_name="Speaker Detection")
                 _log_stage(job_id, "Stage 3: Running speaker diarization...")
                 diarization_segments = stage_3_diarization(job_id)
                 if diarization_segments:
